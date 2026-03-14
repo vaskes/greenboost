@@ -1,0 +1,33 @@
+# Kernel module build artifacts
+*.ko
+*.o
+*.mod
+*.mod.c
+*.symvers
+*.order
+.*.cmd
+.tmp_versions/
+Module.symvers
+modules.order
+
+# Compiled shared library
+libgreenboost_cuda.so
+
+# Editor temp files
+nano.*.save
+*.swp
+*.swo
+*~
+
+# Private Claude Code context
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Python venv (managed by greenboost_setup.sh)
+venv/
+.venv/
