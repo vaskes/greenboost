@@ -206,7 +206,7 @@ PTQ — and use GreenBoost's DDR4 pool for KV cache only.
 - T3 NVMe tier is slow for random access. If a workload thrashes T3, performance degrades
   significantly. This is a fundamental NVMe latency constraint, not a software issue.
 - Blackwell (compute capability 12.0) is the primary tested GPU. Ada Lovelace and Ampere
-  should work, but have not been tested as extensively.
+  should work.
 
 ---
 
