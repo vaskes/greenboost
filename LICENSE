@@ -21,7 +21,7 @@ MANDATORY ATTRIBUTION — regardless of which license option applies:
   distributions must clearly credit:
 
       GreenBoost — created by Ferran Duarri
-      https://github.com/ferranduarri/greenboost
+      https://gitlab.com/IsolatedOctopi/nvidia_greenboost
 
   This credit must appear in:
     • Source file headers
@@ -38,7 +38,7 @@ products, or any use that cannot comply with GPL v2, a separate commercial
 license is required from the copyright holder.
 
 Commercial licenses may include royalty terms, support agreements, and
-custom modifications. Contact: ferran.duarri@proton.me
+custom modifications. Contact: ferran.duarri@me.com
 
 The author (Ferran Duarri) expressly reserves the right to:
   • Re-license this software under any terms at any time
