@@ -157,44 +157,6 @@ So the ~65% VRAM figure is not waste. It is: model layers that fit in VRAM + res
 for KV cache + activation headroom. The rest of the model is in System DDR doing exactly
 what it is supposed to do.
 
----
-
-## Using GreenBoost inside containers, VMs, and WSL2
-
-On bare metal, the kernel module (Path A) handles everything. For environments where
-`greenboost.ko` cannot be loaded — Docker, LXC, KVM guests, WSL2, shared HPC clusters —
-the CUDA shim automatically falls back to Path B: `cuMemHostRegister(DEVICEMAP)`, which
-pins anonymous system RAM pages directly through the CUDA driver with no kernel module
-required. This is Jerry Nguyen's contribution (see Contributors).
-
-The three overflow paths:
-
-| Path | Method | When it activates |
-|------|--------|------------------|
-| A | DMA-BUF + `greenboost.ko` | Bare-metal Linux, kernel module loaded (default) |
-| B | `cuMemHostRegister` | Kernel module unavailable — containers, VMs, WSL2 |
-| C | `cuMemAllocManaged` UVM | Last resort — Path B rejected by the CUDA driver (some HPC cluster policies) |
-
-Path C exists for the rare edge case where even `cuMemHostRegister` is denied. It is not
-something most users will ever hit. On your workstation, Path A handles everything. In most
-container and VM setups, Path B handles everything.
-
-```bash
-# Docker example
-docker run --gpus all \
-  -e GREENBOOST_ACTIVE=1 \
-  -e LD_PRELOAD=/usr/local/lib/libgreenboost_cuda.so \
-  -v /usr/local/lib/libgreenboost_cuda.so:/usr/local/lib/libgreenboost_cuda.so \
-  my-llm-image python run_model.py
-
-# Force Path B only (skip kernel-module path entirely):
-GREENBOOST_USE_DMA_BUF=0 greenboost run python your_script.py
-```
-
-For a full explanation of path selection, bandwidth trade-offs, and per-environment
-instructions see **[container_vm_mode.md](container_vm_mode.md)**.
-
----
 
 ## What this code is based on, and where it comes from
 
@@ -307,6 +269,7 @@ watch -n1 'cat /sys/class/greenboost/greenboost/pool_info'
 
 For tools that require manual model loading — llama.cpp, ik_llama.cpp, and others — see
 **[implementing_further_into_tools.md](implementing_further_into_tools.md)**.
+
 Ollama does not need this; GreenBoost integrates with it automatically via the CUDA shim.
 
 ---
@@ -367,6 +330,14 @@ CUDA SHIM WRAPPER:
 - Blackwell (compute capability 12.0) is the primary tested GPU. Ada Lovelace and Ampere
   should work.
 
+
+---
+
+## Using GreenBoost inside containers, VMs, and WSL2
+
+On bare metal, the greenboost kernel module  handles everything. For environments where `greenboost.ko` cannot be loaded — Docker, LXC, KVM guests, WSL2, shared HPC clusters — the CUDA shim automatically falls back to Path B: `cuMemHostRegister(DEVICEMAP)`, which
+pins anonymous system RAM pages directly through the CUDA driver with no kernel module required. Check Jerry Nguyen's contribution (see Contributors), for full explanation of path selection, bandwidth trade-offs, and per-environment instructions see **[container_vm_mode.md](container_vm_mode.md)**.
+
 ---
 
 ## Model optimization tools
@@ -385,12 +356,6 @@ and any documentation that references this work.
 ```
 Copyright (C) 2024-2026 Ferran Duarri
 ```
-
----
-
-If you try this and run into issues, open an issue on the repository. I am particularly
-interested in feedback from people running different GPU generations (Ada Lovelace, Ampere)
-or different inference engines beyond Ollama and ExLlamaV3.
 
 ---
 
