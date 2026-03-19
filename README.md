@@ -28,11 +28,11 @@ at the CUDA allocation layer, not the driver layer.
 I have an RTX 5070 with 12 GB VRAM and I wanted to run `glm-4.7-flash:q8_0`, a 31.8 GB
 model. The standard options are:
 
-- **Offload layers to CPU** — works, but drops tok/s significantly and completely breaks on
+- **Offload layers to CPU** ; works, but drops tok/s significantly and completely breaks on
   long contexts. More on this below.
-- **Use a smaller quantization** — you lose quality. At q4_0 the model is noticeably worse
+- **Use a smaller quantization** ; you lose quality. At q4_0 the model is noticeably worse
   on reasoning tasks.
-- **Buy a bigger GPU** — a 48 GB card costs more than a complete workstation.
+- **Buy a bigger GPU** ; a 48 GB card costs more than a complete workstation.
 
 None of those felt right, so I built an alternative: route the overflow memory to system DDR
 via DMA-BUF, which gives the GPU direct access to system RAM over the PCIe link without any
@@ -46,24 +46,23 @@ DDR4-3600, Samsung 990 EVO Plus 4 TB NVMe, Ubuntu 26.04, kernel 6.19, NVIDIA dri
 ## Why not ik_llama.cpp or CPU offload?
 
 I really like the concept of the CPU taking care of tensor compute. The idea is elegant.
-The problem is the compute power is not there — and the situation gets much worse the moment
+The problem is the compute power is not there, and the situation gets much worse the moment
 you work with long contexts.
 
 The thing that kills ik_llama.cpp for my use case is **prefill**. I am running 198K context.
 When you throw a long document or a multi-turn conversation at the model, the prefill stage
-processes potentially thousands of tokens in parallel batches — and that is where GPU compute
+processes potentially thousands of tokens in parallel batches, and that is where GPU compute
 absolutely demolishes CPU.
 
 With ik_llama.cpp, those CPU-side layers have to run matrix multiplications on the full batch
-using AVX vector instructions. The i9-14900KF is a powerful CPU, but it is not built for
-this. 
+using AVX vector instructions. The i9-14900KF is a powerful CPU, but it is not built for this. 
 With GreenBoost, the GPU handles the entire model during prefill, streaming the System DDR
 layers over PCIe while tensor cores do the work in parallel. Prefill is easily 5–10× faster.
 
 If you are running short prompts and only care about generation speed, ik_llama.cpp hybrid
 could be a reasonable solution. But with 198K context and real workloads, slow prefill
 absolutely kills the experience. With an autonomous workflow where the LLM creates plans and
-implements them across long multi-turn sessions — how are you supposed to achieve that with
+implements them across long multi-turn sessions, how are you supposed to achieve that with
 ik_llama.cpp? It will collapse under the context length before it gets anywhere useful.
 
 And that is without even considering the compatibility issues you face with ik_llama.cpp on
@@ -72,23 +71,23 @@ different setups.
 **The deeper difference: system-level vs application-level.**
 
 ik_llama.cpp is an application-level solution. It teaches itself to spill weights into system
-RAM when VRAM fills up — but that is entirely internal to the llama.cpp process. From the
+RAM when VRAM fills up, but that is entirely internal to the llama.cpp process. From the
 operating system's perspective, your GPU still has 12 GB. PyTorch, ComfyUI, any other app
 that calls `cudaMalloc` hits the same 12 GB wall as always. They have no visibility into what
 llama.cpp is doing internally.
 
 GreenBoost works at a fundamentally different level. The kernel module carves out a large pool
-of pinned DDR RAM and makes it GPU-accessible via DMA-BUF — a standard Linux mechanism for
+of pinned DDR RAM and makes it GPU-accessible via DMA-BUF, a standard Linux mechanism for
 sharing memory between devices. The CUDA shim intercepts memory allocation calls before they
-reach the real GPU driver. Any process running with that shim — PyTorch, ComfyUI, Ollama,
-anything — transparently gets access to that expanded pool. No per-application changes needed.
+reach the real GPU driver. Any process running with that shim; PyTorch, ComfyUI, Ollama,
+anything, transparently gets access to that expanded pool. No per-application changes needed.
 
 **GreenBoost is not a cache.** A common misconception: people hear "overflow to System DDR" and
 assume there is a hit/miss/eviction policy somewhere. There is not. A 31 GB model just
 *lives* in T1+T2 (VRAM + System DDR pool). The GPU addresses everything directly via PCIe DMA (Direct Memory Access).
 The model weights simply live in VRAM and System DDR at the same time, permanently. The GPU
-reads T1 weights at full VRAM speed and T2 weights over the PCIe link at ~32 GB/s. T2 is
-slower because of the hardware limitations itself between the GPU and the RAM — not because of any software
+reads T1 weights at full VRAM speed and T2 weights over the PCIe link at ~32 GB/s PCIe 4 / ~64 GB/s PCIe 5. 
+T2 is slower because of the hardware limitations itself between the GPU and the RAM, not because of any software
 caching mechanism.
 
 ---
@@ -102,7 +101,7 @@ Two components cooperate:
 Allocates pinned DDR pages using the buddy allocator (2 MB compound pages for efficiency)
 and exports them as DMA-BUF file descriptors. The GPU imports these pages as CUDA external
 memory via `cudaImportExternalMemory`. From CUDA's perspective, those pages look like
-device-accessible memory — it does not know they live in system RAM. The PCIe link handles
+device-accessible memory, it does not know they live in system RAM. The PCIe link handles
 the actual data movement (~32 GB/s on PCIe 4.0 x16, ~64 GB/s on PCIe 5.0 x16).
 
 A sysfs interface (`/sys/class/greenboost/greenboost/pool_info`) lets you monitor usage
@@ -112,8 +111,8 @@ things get dangerous.
 **2. CUDA shim (`libgreenboost_cuda.so`, injected via `LD_PRELOAD`)**
 
 Intercepts `cudaMalloc`, `cudaMallocAsync`, `cuMemAllocAsync`, `cudaFree`, and `cuMemFree`.
-Small allocations pass straight through to the real CUDA runtime. Large ones — KV cache,
-model weights overflowing VRAM — are redirected to the kernel module and imported back as
+Small allocations pass straight through to the real CUDA runtime. Large ones; KV cache,
+model weights overflowing VRAM, are redirected to the kernel module and imported back as
 CUDA device pointers.
 
 One tricky part worth mentioning: Ollama resolves GPU symbols via `dlopen` + `dlsym`
@@ -132,17 +131,17 @@ also intercepts `dlsym` itself and returns hooked versions of `cuDeviceTotalMem_
 | T3 | NVMe swap | 64 GB | ~1.8 GB/s | Safety overflow (rarely hit) |
 
 T1 holds the hot layers. T2 holds the rest of the model and the KV cache overflow at long
-contexts. T3 is a safety net — the model and KV cache at normal working context lengths fit
+contexts. T3 is a safety net, the model and KV cache at normal working context lengths fit
 comfortably in T1+T2, and T3 should rarely be touched in normal operation.
 
-**Why GPU monitoring tools show ~65% VRAM used — not 100%**
+**Why GPU monitoring tools show ~65% VRAM used, not 100%**
 
 This is expected and correct. When you run a model with GreenBoost, the shim tells Ollama
 that the total GPU memory is 63 GB (T1 + T2 combined). Ollama then distributes the model
 layers across all 63 GB. The layers that happen to land in the first 12 GB end up in real
 VRAM; the rest land in the System DDR pool.
 
-What `nvidia-smi` or any GPU monitor shows is only the physical VRAM — it has no visibility
+What `nvidia-smi` or any GPU monitor shows is only the physical VRAM, it has no visibility
 into the DDR pool. So if you are running a 32 GB model and the monitor shows 7–8 GB of VRAM
 used, that does not mean the model is only partially loaded. It means 7–8 GB of it is in
 VRAM and the remaining ~24 GB is in System DDR, accessed by the GPU directly over PCIe.
@@ -151,7 +150,7 @@ On top of that, GreenBoost reserves headroom in VRAM for two things that must st
 the KV cache (rewritten on every generated token) and the activation buffers (temporary
 workspace the GPU uses during each layer's computation). Filling VRAM to 100% with weights
 would leave no room for these, and generation would fail or spill to System DDR in the
-worst possible way — random, uncontrolled, under pressure.
+worst possible way; random, uncontrolled, under pressure.
 
 So the ~65% VRAM figure is not waste. It is: model layers that fit in VRAM + reserved space
 for KV cache + activation headroom. The rest of the model is in System DDR doing exactly
@@ -176,9 +175,9 @@ that I was essentially ready to sit the exam. I got into a relationship, limited
 and I ended up stopping missing the certification exam. That one still stings a bit.
 
 I use AI inference every day at work. Watching tokens burn through cloud APIs, knowing
-I had a GPU sitting at home doing nothing useful — it eventually clicked. The question I
-started asking was simple: can I run a model like `glm-4.7-flash` properly on my own
-machine, with the GPU tensor cores doing all the compute, without CPU spill?
+I had a GPU doing nothing useful, it eventually clicked. The question I started asking was simple: 
+can I run a model like `glm-4.7-flash` properly on my own machine, with the GPU tensor cores doing all the compute, 
+without CPU spill?
 
 That was the spark for GreenBoost to materialize.
 
@@ -232,24 +231,25 @@ cd nvidia_greenboost
 # and computes optimal parameters at install time:
 sudo ./greenboost_setup.sh full-install
 
-# Offline / air-gapped workstation — skip the GitLab version check:
+# You can skip the GitLab version check with:
 sudo ./greenboost_setup.sh full-install --skip-update-check
 
 # After reboot, verify everything is working:
 sudo ./greenboost_setup.sh diagnose
 ```
 
-The installer runs the following steps automatically:
+The installer then runs the following steps automatically:
 
 | Step | What it does |
 |------|-------------|
+| Version check | Queries GitLab tags API; if a newer release exists, offers to `git pull` and restart — skipped with `--skip-update-check` or when offline |
 | Purge | Stops Ollama/llama-server, unloads any previous GreenBoost module, removes old install artifacts |
 | Dependencies | Installs build tools, kernel headers, CUDA dev packages |
 | Build + install | Compiles `greenboost.ko` + `libgreenboost_cuda.so`, installs to `/lib/modules` and `/usr/local/lib` |
 | Load | Inserts the kernel module with auto-detected pool sizes (T1/T2/T3) |
 | System configs | Writes Ollama systemd env vars, NVMe udev rules, CPU governor service, hugepages, sysctl |
-| **tune-all** | **CPU governor → performance; NVMe scheduler → none, read-ahead → 4 MB; THP → always; vm.swappiness=10; GRUB params (rcu_nocbs, nohz_full, transparent_hugepage=always); AI/compute libraries (OpenBLAS AVX2, hwloc, libnuma, nvtop, microcode)** |
-| ExLlamaV3 | Sets up `/opt/greenboost/venv` with ExLlamaV3 + kvpress + trl |
+| Tune-all | **CPU governor → performance; NVMe scheduler → none, read-ahead → 4 MB; THP → always; vm.swappiness=10; GRUB params (rcu_nocbs, nohz_full, transparent_hugepage=always); AI/compute libraries (OpenBLAS AVX2, hwloc, libnuma, nvtop, microcode)** |
+| Tools | Creates `/opt/greenboost/venv` and installs Python inference tools: ExLlamaV3 (alternative inference engine with GreenBoost-aware KV cache), kvpress, LoRA fine-tuning utilities, and model optimization helpers |
 | Restart | Restarts any services that were stopped during purge (Ollama, llama-server) |
 
 `greenboost_setup.sh` detects Red Hat-based systems at runtime and delegates to
@@ -308,7 +308,7 @@ COMMANDS:
   install-sys-configs  Install Ollama env, NVMe udev, CPU governor, hugepages, sysctl
   install-deps         Install all Ubuntu OS packages (build + CUDA + AI libs)
   setup-swap [GB]      Create/activate NVMe swap (default: auto-sized)
-  full-install         Complete install — deps, module, shim, configs, tune-all, ExLlamaV3
+  full-install         Complete install — deps, module, shim, configs, tune-all, Python inference tools
   status               Show module status and 3-tier pool info
   diagnose             Full health check — run this after reboot to verify everything works
   optimize-model [--model M] [--strategy tensorrt|lora|exllama|all]
@@ -335,16 +335,14 @@ CUDA SHIM WRAPPER:
 
 ## Using GreenBoost inside containers, VMs, and WSL2
 
-On bare metal, the greenboost kernel module  handles everything. For environments where `greenboost.ko` cannot be loaded — Docker, LXC, KVM guests, WSL2, shared HPC clusters — the CUDA shim automatically falls back to Path B: `cuMemHostRegister(DEVICEMAP)`, which
+On bare metal, the greenboost kernel module  handles everything. For environments where `greenboost.ko` cannot be loaded; Docker, LXC, KVM guests, WSL2, shared HPC clusters, the CUDA shim automatically falls back to Path B: `cuMemHostRegister(DEVICEMAP)`, which
 pins anonymous system RAM pages directly through the CUDA driver with no kernel module required. Check Jerry Nguyen's contribution (see Contributors), for full explanation of path selection, bandwidth trade-offs, and per-environment instructions see **[container_vm_mode.md](container_vm_mode.md)**.
 
 ---
 
 ## Model optimization tools
 
-The [`tools/`](tools/) directory bundles several open-source libraries for further tuning —
-quantization, KV cache compression, fine-tuning, and alternative inference engines. See
-**[tools/README.md](tools/README.md)** for details.
+The [`tools/`](tools/) directory bundles several open-source libraries for further tuning; quantization, KV cache compression, fine-tuning, and alternative inference engines. See **[tools/README.md](tools/README.md)** for details.
 
 ---
 

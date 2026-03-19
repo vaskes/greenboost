@@ -57,6 +57,7 @@ die()   { echo -e "${RED}[GreenBoost] ERROR:${NC} $*" >&2; exit 1; }
 
 # ---- Update check -----------------------------------------------------
 # Queries the GitLab tags API; prints a warning if a newer tag exists.
+# If stdin is a TTY, offers to git pull and re-exec the installer.
 # Non-blocking: 5-second timeout; silently skips if network is unavailable.
 
 check_update() {
@@ -83,16 +84,41 @@ check_update() {
 
     [[ -z "$latest" ]] && return   # no version tags found
 
-    # Compare: if latest > GB_VERSION, warn the user
+    # Compare: if latest > GB_VERSION, warn and optionally update
     local newer
     newer=$(printf '%s\n%s\n' "$GB_VERSION" "$latest" | sort -V | tail -1)
     if [[ "$newer" != "$GB_VERSION" ]]; then
+        echo ""
         warn "╔══════════════════════════════════════════════════════════════╗"
-        warn "║  A newer GreenBoost version is available: v${latest}               "
-        warn "║  You are installing:                       v${GB_VERSION}               "
-        warn "║  Download: https://gitlab.com/IsolatedOctopi/nvidia_greenboost"
+        warn "║  A newer GreenBoost version is available: v${latest}"
+        warn "║  You are installing:                       v${GB_VERSION}"
+        warn "║  https://gitlab.com/IsolatedOctopi/nvidia_greenboost"
         warn "╚══════════════════════════════════════════════════════════════╝"
         echo ""
+
+        # Only prompt when stdin is an interactive terminal
+        if [[ -t 0 ]]; then
+            local _yn
+            read -r -p "$(echo -e "${YLW}[GreenBoost]${NC} Fetch the update and restart the installer? [y/N] ")" _yn
+            if [[ "${_yn,,}" == "y" ]]; then
+                info "Pulling latest release..."
+                # Run git pull as the original (non-root) user when invoked via sudo
+                local _pull_ok=0
+                if [[ -n "${SUDO_USER:-}" ]]; then
+                    sudo -u "$SUDO_USER" git -C "$MODULE_DIR" pull origin main \
+                        && _pull_ok=1
+                else
+                    git -C "$MODULE_DIR" pull origin main \
+                        && _pull_ok=1
+                fi
+                if [[ $_pull_ok -eq 1 ]]; then
+                    info "Update complete — restarting installer..."
+                    exec "$0" "${GB_ORIG_ARGS[@]}"
+                else
+                    warn "git pull failed — continuing with v${GB_VERSION}."
+                fi
+            fi
+        fi
     else
         info "Version check: v${GB_VERSION} is the latest release."
     fi
@@ -1353,7 +1379,7 @@ cmd_help() {
     echo "USAGE:  sudo ./greenboost_setup.sh <command>"
     echo ""
     echo "COMMANDS:"
-    echo "  full-install   Complete install — deps, module, shim, configs, tune-all, ExLlamaV3"
+    echo "  full-install   Complete install — deps, module, shim, configs, tune-all, Python inference tools"
     echo "  install        Build and install module + CUDA shim system-wide"
     echo "  uninstall      Unload, remove module + all config files"
     echo "  build          Build only (no system install)"
@@ -1515,8 +1541,8 @@ cmd_full_install() {
     cmd_tune_all
     echo ""
 
-    # 6/6 — ExLlamaV3 + Python tools (kvpress, modelopt, unsloth)
-    info "[6/6] Setting up Python venv + ExLlamaV3 + inference tools..."
+    # 6/6 — Python inference tools (ExLlamaV3, kvpress, modelopt, LoRA)
+    info "[6/6] Setting up Python venv + inference tools..."
     local exllama_dir="$MODULE_DIR/libraries/exllamav3"
     local venv_dir="/opt/greenboost/venv"
 
@@ -2411,6 +2437,7 @@ except Exception as e:
 
 # Strip global flags before command dispatch.
 # --skip-update-check  Bypass the GitLab version check (use on offline workstations).
+GB_ORIG_ARGS=("$@")   # preserved for exec-restart after git pull
 GB_SKIP_UPDATE=0
 _ARGS=()
 for _arg in "$@"; do
