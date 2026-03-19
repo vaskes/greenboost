@@ -1118,7 +1118,7 @@ cudaError_t cudaMemPrefetchAsync(const void *devPtr, size_t count, int dstDevice
 /* ------------------------------------------------------------------ */
 /*  cuMemGetInfo_v2 / cuMemGetInfo / cudaMemGetInfo overrides          */
 /*                                                                      */
-/*  Report virtual VRAM = real VRAM + DDR4 pool so the CUDA runtime    */
+/*  Report virtual VRAM = real VRAM + System DDR pool so the CUDA runtime    */
 /*  and Ollama scheduler offload ALL model layers as GPU tensors.       */
 /*  Each resulting cudaMalloc that overflows real VRAM is then          */
 /*  redirected to system RAM via DMA-BUF (gb_needs_overflow uses real VRAM). */

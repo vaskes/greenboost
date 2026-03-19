@@ -3,7 +3,7 @@
 GreenBoost — 3-tier pool spillover stress test.
 
 Allocates tensors filling T1 (VRAM) first, then verifies automatic
-spillover into system RAM (T2 DDR4 via GreenBoost shim). Reports
+spillover into system RAM (T2 System DDR via GreenBoost shim). Reports
 per-tier allocation, access latency, and throughput.
 
 Author  : Ferran Duarri
@@ -44,7 +44,7 @@ def print_header():
     print(f"\n{Colors.CYAN}╔════════════════════════════════════════════════════════════════╗")
     print(f"║                                                                ║")
     print(f"║     GreenBoost — 3-Tier Pool Spillover Stress Test            ║")
-    print(f"║     T1 VRAM (12 GB) → T2 DDR4 (51 GB) → T3 NVMe (576 GB)   ║")
+    print(f"║     T1 VRAM (12 GB) → T2 System DDR (51 GB) → T3 NVMe (576 GB)   ║")
     print(f"║     Copyright (C) 2024-2026 Ferran Duarri                    ║")
     print(f"║                                                                ║")
     print(f"╚════════════════════════════════════════════════════════════════╝{Colors.RESET}\n")
@@ -53,7 +53,7 @@ def print_header():
 def run_spillover_test(total_gb=12):
     """
     Fills T1 (GPU VRAM) first, then spills into T2 (system RAM).
-    Requires GreenBoost shim (LD_PRELOAD) for transparent DDR4 access.
+    Requires GreenBoost shim (LD_PRELOAD) for transparent System DDR access.
     """
     print(f"{Colors.YELLOW}Target allocation : {total_gb} GB{Colors.RESET}")
     print(f"   Strategy: GPU (T1) first, then RAM (T2) spillover via GreenBoost")
@@ -99,11 +99,11 @@ def run_spillover_test(total_gb=12):
 
         except RuntimeError as exc:
             if "out of memory" in str(exc).lower():
-                print(f"\n{Colors.YELLOW}  T1 VRAM full — spilling to T2 DDR4 (GreenBoost)...{Colors.RESET}")
+                print(f"\n{Colors.YELLOW}  T1 VRAM full — spilling to T2 System DDR (GreenBoost)...{Colors.RESET}")
                 tensor = torch.randn(num_elements, device=device_cpu, dtype=torch.float32)
                 tensors_cpu.append(tensor)
                 cpu_allocated += block_mb * 1024 * 1024
-                tier_label = f"{Colors.YELLOW}T2 DDR4{Colors.RESET}"
+                tier_label = f"{Colors.YELLOW}T2 System DDR{Colors.RESET}"
             else:
                 raise
 
@@ -132,7 +132,7 @@ def run_spillover_test(total_gb=12):
     print(f"     Usage    : {gpu_used_end} MB / {gpu_total_end} MB  "
           f"({gpu_used_end / gpu_total_end * 100:.1f}%)")
     print()
-    print(f"   {Colors.YELLOW}T2 DDR4 (GreenBoost spillover):{Colors.RESET}")
+    print(f"   {Colors.YELLOW}T2 System DDR (GreenBoost spillover):{Colors.RESET}")
     print(f"     Blocks   : {len(tensors_cpu)}")
     print(f"     Allocated: {cpu_allocated / (1024**3):.2f} GB")
     print()
@@ -142,7 +142,7 @@ def run_spillover_test(total_gb=12):
           f"RAM {cpu_allocated / total_allocated * 100:.1f}%)")
 
     if tensors_cpu:
-        print(f"\n{Colors.GREEN}SPILLOVER ACTIVE — T1 full, T2 DDR4 in use.{Colors.RESET}")
+        print(f"\n{Colors.GREEN}SPILLOVER ACTIVE — T1 full, T2 System DDR in use.{Colors.RESET}")
     else:
         print(f"\n{Colors.YELLOW}All data fits in T1 VRAM (no spillover triggered).{Colors.RESET}")
 
@@ -154,7 +154,7 @@ def run_spillover_test(total_gb=12):
         print(f"   T1 VRAM read  : {val:.6f}")
     if tensors_cpu:
         val = tensors_cpu[0].mean().item()
-        print(f"   T2 DDR4 read  : {val:.6f}")
+        print(f"   T2 System DDR read  : {val:.6f}")
     print(f"   Latency: {(time.time() - t0) * 1000:.2f} ms")
 
     # Hold memory for manual inspection
@@ -199,7 +199,7 @@ def main():
         print(f"║                                                                ║")
         print(f"║         GreenBoost 3-Tier Spillover Test PASSED               ║")
         print(f"║                                                                ║")
-        print(f"║  T1 VRAM filled → T2 DDR4 spillover via GreenBoost shim      ║")
+        print(f"║  T1 VRAM filled → T2 System DDR spillover via GreenBoost shim      ║")
         print(f"║  Copyright (C) 2024-2026 Ferran Duarri                       ║")
         print(f"║                                                                ║")
         print(f"╚════════════════════════════════════════════════════════════════╝{Colors.RESET}\n")

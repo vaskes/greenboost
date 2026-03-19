@@ -2,7 +2,7 @@
 # GreenBoost — ExLlamaV3 launcher
 # Copyright (C) 2024-2026 Ferran Duarri. GPL v2 / Commercial — see LICENSE.
 #
-# Runs ExLlamaV3 chat or server with GreenBoost DDR4 KV cache offload enabled.
+# Runs ExLlamaV3 chat or server with GreenBoost System DDR KV cache offload enabled.
 # Automatically injects LD_PRELOAD shim and sets GreenBoost cache environment.
 #
 # USAGE:
@@ -120,7 +120,7 @@ export PYTHONPATH="$EXLLAMA_DIR:${PYTHONPATH:-}"
 
 # ── Launch ──────────────────────────────────────────────────────────────────
 echo ""
-info "Starting ExLlamaV3 ($MODE) — KV cache → GreenBoost Tier 2 DDR4"
+info "Starting ExLlamaV3 ($MODE) — KV cache → GreenBoost Tier 2 System DDR"
 echo ""
 
 case "$MODE" in

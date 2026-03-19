@@ -109,13 +109,13 @@ It provides the best possible bandwidth and the most robust integration:
 
 - **T3 NVMe tier.** The kernel module manages the Tier 3 NVMe overflow pool
   (`/swap_nvme.img`), which can extend the effective memory to hundreds of
-  gigabytes.  Path B has no T3 equivalent — when DDR4 is exhausted it falls
+  gigabytes.  Path B has no T3 equivalent — when System DDR is exhausted it falls
   back to Path C (UVM paging to swap), which is slower and less controlled.
 
 - **`/sys/class/greenboost/greenboost/pool_info` live monitoring.** The sysfs
   interface exposed by the kernel module lets you monitor T2 allocation in real
   time.  `watch -n1 'cat /sys/class/greenboost/greenboost/pool_info'` gives
-  instant visibility into how much DDR4 the model is consuming.
+  instant visibility into how much System DDR the model is consuming.
 
 **Summary: on bare metal, always run `sudo ./greenboost_setup.sh full-install`
 and use Path A.  Path B exists for environments where Path A is impossible.**
@@ -173,11 +173,11 @@ sysadmin involvement.
 | Feature | Path A (DMA-BUF) | Path B (HostReg) |
 |---------|-----------------|-----------------|
 | Hugepages | Kernel-allocated, guaranteed 2 MB | Best-effort `MAP_HUGETLB` (may fall back to 4 K) |
-| T3 NVMe tier | Yes — kernel watchdog + swap subsystem | No — DDR4 only, then UVM paging |
+| T3 NVMe tier | Yes — kernel watchdog + swap subsystem | No — System DDR only, then UVM paging |
 | Live sysfs monitoring | `/sys/class/greenboost/pool_info` | Not available |
 | Memory pressure watchdog | Kernel kthread, eventfd signal | Not available |
 | Physical page pinning | Hard-pinned by kernel (cannot be evicted) | Soft-pinned by CUDA driver (may be re-registered) |
-| PCIe bandwidth (typical) | ~50 GB/s (DDR4 dual-channel, pinned hugepages) | ~32–45 GB/s (depends on page size and TLB miss rate) |
+| PCIe bandwidth (typical) | ~50 GB/s (System DDR dual-channel, pinned hugepages) | ~32–45 GB/s (depends on page size and TLB miss rate) |
 | Requires `greenboost.ko` | Yes | No |
 | Works in Docker/VM/WSL2 | No | Yes |
 

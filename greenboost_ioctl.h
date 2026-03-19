@@ -62,7 +62,7 @@ struct gb_info {
 	gb_u32 _pad;               /* alignment                          */
 
 	/* Combined view */
-	gb_u64 total_combined_mb;  /* VRAM + DDR4 pool + NVMe swap       */
+	gb_u64 total_combined_mb;  /* VRAM + System DDR pool + NVMe swap       */
 };
 
 /* Madvise request — advise the kernel on buffer eviction priority */

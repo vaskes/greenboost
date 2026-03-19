@@ -2,7 +2,7 @@
 
 These tools extend GreenBoost beyond memory overflow into active model optimization.
 The goal is to reduce model size until it fits comfortably in T1+T2, using GreenBoost's
-DDR4 pool for KV cache only — which gives the best possible performance on consumer hardware.
+System DDR pool for KV cache only — which gives the best possible performance on consumer hardware.
 
 ---
 
@@ -11,7 +11,7 @@ DDR4 pool for KV cache only — which gives the best possible performance on con
 | Tool | Purpose |
 |------|---------|
 | **ExLlamaV3** | High-performance inference engine with a native GreenBoost KV cache layer. KV tensors are allocated directly from `/dev/greenboost` as zero-copy mmap → numpy → PyTorch tensors. No CUDA shim involved for cache I/O. |
-| **kvpress** | Runtime KV cache compression (ExpAttn, SnapKV, KnormPress). Applies at inference time, no retraining needed. Reduces DDR4 pressure significantly at long context. |
+| **kvpress** | Runtime KV cache compression (ExpAttn, SnapKV, KnormPress). Applies at inference time, no retraining needed. Reduces System DDR pressure significantly at long context. |
 | **NVIDIA ModelOpt** | Post-training quantization (FP8, INT4-AWQ, NVFP4). No retraining — only a calibration pass (~512 samples). Cuts the 32 GB model to ~16 GB (FP8) or ~8 GB (INT4-AWQ). |
 | **TensorRT-Edge-LLM** | TRT engine export for desktop RTX GPUs. |
 | **Unsloth + LoRA** | Parameter-efficient fine-tuning that fits a 30B model into 12 GB VRAM via 4-bit base quantization and rank-16 adapters. Requires your own training data. |
@@ -21,7 +21,7 @@ DDR4 pool for KV cache only — which gives the best possible performance on con
 ## Usage
 
 ```bash
-# ExLlamaV3 with GreenBoost DDR4 KV cache offload:
+# ExLlamaV3 with GreenBoost System DDR KV cache offload:
 ./tools/greenboost-exllama.sh --model /opt/models/glm-4.7-flash-exl3
 
 # Convert a HuggingFace model to EXL3 format (4bpw → ~16 GB):
@@ -53,7 +53,7 @@ sudo ./greenboost_setup.sh optimize-model --model THUDM/glm-4.7-flash-hf --strat
 | ExLlamaV3 EXL3 2bpw (8 GB, full VRAM) | 25–60 | 0.5–2 s |
 
 The best strategy is to shrink the model until it fits in VRAM — either with EXL3
-quantization or ModelOpt PTQ — and use GreenBoost's DDR4 pool for KV cache only.
+quantization or ModelOpt PTQ — and use GreenBoost's System DDR pool for KV cache only.
 The PCIe 4.0 link (~32 GB/s) is the hard bottleneck when weights overflow VRAM.
 
 ---

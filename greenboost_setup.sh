@@ -31,7 +31,7 @@
 #
 # ENVIRONMENT (for load command):
 #   GPU_PHYS_GB=12     physical VRAM in GB       (RTX 5070 default)
-#   VIRT_VRAM_GB=51    system RAM pool size in GB      (80% of 64 GB DDR4)
+#   VIRT_VRAM_GB=51    system RAM pool size in GB      (80% of 64 GB System DDR)
 #   RESERVE_GB=12      minimum free system RAM to always maintain
 #   NVME_SWAP_GB=64    total NVMe swap capacity  (auto-detected; 64 GB default)
 #   NVME_POOL_GB=58    GreenBoost soft cap on T3 allocations
@@ -262,7 +262,7 @@ print_detected_hardware() {
 set_owner_workstation_params() {
     GPU_NAME="ASUS RTX 5070 OC (GB205)"
     CPU_NAME="Intel Core i9-14900KF (8Px2HT + 16E = 32 logical, golden CPU 4-7 @ 6GHz)"
-    RAM_TYPE="DDR4"
+    RAM_TYPE="System DDR"
     RAM_SPEED_MT="3600"
     NVME_SIZE_GB=4000
     GB_PHYS=12
@@ -1686,7 +1686,7 @@ cmd_optimize_model() {
         fi
     fi
 
-    # ── ExLlamaV3 + GreenBoost DDR4 KV cache ─────────────────────────────
+    # ── ExLlamaV3 + GreenBoost System DDR KV cache ─────────────────────────────
     if [[ "$strategy" == "exllama" || "$strategy" == "all" ]]; then
         _sect_opt "ExLlamaV3 + GreenBoost system RAM KV Cache"
         if [[ ! -d "$exllama_dir" ]]; then

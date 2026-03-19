@@ -14,7 +14,7 @@
 
 I have been quietly working on this for a while and figured it was time to share it with the
 community. This is a Linux kernel module + CUDA userspace shim that transparently extends
-GPU VRAM using system DDR4 RAM and NVMe storage, so you can run large language models that
+GPU VRAM using system System DDR RAM and NVMe storage, so you can run large language models that
 exceed your GPU memory without modifying the inference software at all.
 
 **Important:** GreenBoost does not replace or modify the official NVIDIA kernel drivers
@@ -35,7 +35,7 @@ I have an RTX 5070 with 12 GB VRAM and I wanted to run `glm-4.7-flash:q8_0`, whi
 - **Buy a bigger GPU** — not realistic for consumer hardware. A 48 GB card costs more than
   a complete workstation.
 
-None of those felt right, so I built an alternative: route the overflow memory to DDR4 via
+None of those felt right, so I built an alternative: route the overflow memory to System DDR via
 DMA-BUF, which gives the GPU direct access to system RAM over PCIe 4.0 without a CPU
 copy involved.
 
@@ -50,7 +50,7 @@ Two components cooperate:
 
 **1. Kernel module (`greenboost.ko`)**
 
-Allocates pinned DDR4 pages using the buddy allocator (2 MB compound pages for efficiency)
+Allocates pinned System DDR pages using the buddy allocator (2 MB compound pages for efficiency)
 and exports them as DMA-BUF file descriptors. The GPU can then import these pages as
 CUDA external memory via `cudaImportExternalMemory`. From CUDA's perspective, those pages
 look like device-accessible memory — it doesn't know they live in system RAM. The PCIe 4.0
@@ -80,7 +80,7 @@ real pointer without recursion) and returns hooked versions of `cuDeviceTotalMem
 | Tier | Device | Capacity | Bandwidth | Used for |
 |------|--------|----------|-----------|---------|
 | T1 | RTX 5070 VRAM | 12 GB | ~336 GB/s | Hot layers, active compute |
-| T2 | DDR4 pool | 51 GB | ~32 GB/s via PCIe 4.0 | KV cache, cold weights |
+| T2 | System DDR pool | 51 GB | ~32 GB/s via PCIe 4.0 | KV cache, cold weights |
 | T3 | NVMe swap | 64 GB | ~1.8 GB/s | Safety overflow (rarely hit) |
 
 For the 32 GB model: T1 holds the hot layers, T2 holds the rest. T3 exists as a safety

@@ -62,7 +62,7 @@ hardware (12+51 GB pool, largest model nemotron-3-super:120b ≈ 87 GB, 256K con
 ┌─────────────────────────────────────────────────────────────────────┐
 │              /dev/greenboost  (greenboost.ko v2.5)                  │
 │  • Char device, IOCTL interface                                     │
-│  • GB_IOCTL_ALLOC    — allocate pinned DDR4 pages, return DMA-BUF │
+│  • GB_IOCTL_ALLOC    — allocate pinned System DDR pages, return DMA-BUF │
 │  • GB_IOCTL_GET_INFO — pool statistics                             │
 │  • GB_IOCTL_MADVISE  — hint eviction priority (FROZEN / KV_CACHE) │
 │  • GB_IOCTL_EVICT    — force spill of a buffer to T3 NVMe         │
@@ -77,7 +77,7 @@ hardware (12+51 GB pool, largest model nemotron-3-super:120b ≈ 87 GB, 256K con
            ▼                  ▼
 ┌──────────────────┐  ┌───────────────────┐  ┌───────────────────────┐
 │  Tier 1: T1      │  │  Tier 2: T2        │  │  Tier 3: T3           │
-│  RTX 5070 VRAM   │  │  DDR4 pool         │  │  NVMe swap            │
+│  RTX 5070 VRAM   │  │  System DDR pool         │  │  NVMe swap            │
 │  12 GB GDDR7     │◄─┤  51 GB pinned      │  │  auto-sized NVMe     │
 │  336 GB/s        │  │  2 MB hugepages    │  │  kernel swap handles  │
 │  Native CUDA     │  │  cudaImportExt.Mem │  │  eviction to NVMe     │
@@ -90,7 +90,7 @@ hardware (12+51 GB pool, largest model nemotron-3-super:120b ≈ 87 GB, 256K con
 
 ### Memory Allocation (Tier 2)
 
-Pinned DDR4 pages are allocated with:
+Pinned System DDR pages are allocated with:
 ```c
 alloc_pages(GFP_KERNEL | __GFP_COMP, order)  // order=9 → 2 MB compound pages
 ```
@@ -119,7 +119,7 @@ compression is enabled system-wide via sysctl.
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `physical_vram_gb` | 12 | RTX 5070 actual VRAM |
-| `virtual_vram_gb` | 51 | DDR4 pool capacity (T2) |
+| `virtual_vram_gb` | 51 | System DDR pool capacity (T2) |
 | `safety_reserve_gb` | 12 | Min free RAM never touched |
 | `nvme_swap_gb` | auto | T3 NVMe swap size — computed as 2×(T1+T2), floor 64 GB, cap 200 GB |
 | `nvme_pool_gb` | auto | T3 soft cap (89% of nvme_swap_gb) |
@@ -162,7 +162,7 @@ cudaMalloc(size) called by Ollama/ExLlamaV3
                          ├─ Path 1 (DMA-BUF, primary):
                          │    mmap anonymous pages → GB_IOCTL_PIN_USER_PTR
                          │    cuMemHostRegister → cuMemHostGetDevicePointer
-                         │    → return devPtr (pinned DDR4, zero-copy over PCIe)
+                         │    → return devPtr (pinned System DDR, zero-copy over PCIe)
                          │
                          └─ Path 2 (UVM fallback):
                               cuMemAllocManaged(CU_MEM_ATTACH_GLOBAL)
@@ -188,7 +188,7 @@ real_dlsym = dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.34");  // falls back to 2.2.5 /
 ```
 
 Without this hook, Ollama sees only 12 GB VRAM and schedules model layers to CPU
-instead of the T2 DDR4 pool.
+instead of the T2 System DDR pool.
 
 ### Allocation Flags (from `greenboost_ioctl.h`)
 
@@ -220,7 +220,7 @@ arr = np.frombuffer(mm, dtype=np.float16, count=n).reshape(shape)
 
 # Zero-copy PyTorch tensor (no allocation, shares numpy backing):
 tensor = torch.from_numpy(arr)
-# tensor.data_ptr() points directly into pinned DDR4 pages
+# tensor.data_ptr() points directly into pinned System DDR pages
 ```
 
 This avoids any CPU copy when ExLlamaV3 reads/writes the KV cache.
@@ -236,7 +236,7 @@ _GB_ALLOC_KV_CACHE = 1 << 1
 ### Usage
 
 ```bash
-# Chat with GLM-4.7-Flash via ExLlamaV3 + GreenBoost DDR4 KV cache:
+# Chat with GLM-4.7-Flash via ExLlamaV3 + GreenBoost System DDR KV cache:
 ./tools/greenboost-exllama.sh --model /opt/models/glm-4.7-flash-exl3
 
 # Convert HF model to EXL3 (4 bpw → ~16 GB; 2 bpw → ~8 GB):
@@ -347,7 +347,7 @@ watch -n1 'swapon --show'
 |---------------|----------------|------|-------|
 | Ollama + GreenBoost shim (UVM path) | 3–8 | 4–12s | UVM prefetch hints active — ~50% vs fault mode |
 | + kvpress 50% compression | 4–8 | 3–10s | Less PCIe traffic |
-| + ExLlamaV3 + GreenBoost cache | 8–20 | 2–8s | Native DDR4 cache offload |
+| + ExLlamaV3 + GreenBoost cache | 8–20 | 2–8s | Native System DDR cache offload |
 | + ModelOpt FP8 → 16 GB | 10–25 | 1–5s | Model fits better in T1 |
 | ExLlamaV3 EXL3 2bpw → 8 GB | 25–60 | 0.5–2s | Full VRAM fit, maximum speed |
 

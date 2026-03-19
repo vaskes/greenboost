@@ -13,7 +13,7 @@
  *
  * Architecture:
  *   /dev/greenboost  — char device, IOCTLs
- *   GB_IOCTL_ALLOC   — pin DDR4 pages (T2) or swappable 4K (T3), export DMA-BUF fd
+ *   GB_IOCTL_ALLOC   — pin System DDR pages (T2) or swappable 4K (T3), export DMA-BUF fd
  *   GB_IOCTL_GET_INFO— 3-tier pool statistics
  *   sysfs            — pool_info, hw_info, active_buffers
  *   watchdog kthread — RAM safety + NVMe swap pressure, pinned to P-cores
@@ -65,7 +65,7 @@ MODULE_VERSION("2.3.0");
 #define GB_HPAGE_ORDER  9u
 
 /* Memory tier identifiers */
-enum gb_tier { GB_TIER2_DDR4 = 2, GB_TIER3_NVME = 3 };
+enum gb_tier { GB_TIER2_SDDR = 2, GB_TIER3_NVME = 3 };
 #define GB_HPAGE_SIZE   (PAGE_SIZE << GB_HPAGE_ORDER)   /* 2 097 152 bytes  */
 #define GB_HPAGES_PER   (1u << GB_HPAGE_ORDER)          /* 512 sub-pages    */
 
@@ -78,14 +78,14 @@ enum gb_tier { GB_TIER2_DDR4 = 2, GB_TIER3_NVME = 3 };
 #define CLASS_NAME   "greenboost"
 
 /* ------------------------------------------------------------------ */
-/*  Module parameters — 3-tier: RTX 5070 | DDR4 | NVMe swap           */
+/*  Module parameters — 3-tier: RTX 5070 | System DDR | NVMe swap           */
 /* ------------------------------------------------------------------ */
 
 /* Tier 1 */
 static int physical_vram_gb  = 12;  /* RTX 5070 physical VRAM          */
 
 /* Tier 2 */
-static int virtual_vram_gb   = 51;  /* 80% of 64 GB DDR4               */
+static int virtual_vram_gb   = 51;  /* 80% of 64 GB System DDR               */
 static int safety_reserve_gb = 12;  /* always keep ≥12 GB free in RAM  */
 
 /* Tier 3 */
@@ -164,7 +164,7 @@ struct gb_buf {
 	unsigned int     npages;      /* total in 4K units               */
 	size_t           size;
 	int              id;          /* IDR id (0 = not yet registered) */
-	int              tier;        /* GB_TIER2_DDR4 or GB_TIER3_NVME  */
+	int              tier;        /* GB_TIER2_SDDR or GB_TIER3_NVME  */
 	struct dma_buf  *dmabuf;
 	/* LRU and lifecycle fields (v2.5) */
 	struct list_head  lru_node;     /* link in gb_device.lru_list    */
@@ -187,7 +187,7 @@ struct gb_device {
 	struct mutex     lock;            /* protects idr                   */
 	struct idr       idr;             /* id → struct gb_buf *           */
 
-	/* Tier 2 — DDR4 pool */
+	/* Tier 2 — System DDR pool */
 	atomic_t         active_bufs;     /* live DMA-BUF objects           */
 	atomic64_t       pool_allocated;  /* bytes currently pinned (T2)    */
 	atomic_t         oom_active;      /* 1 when safety guard tripped    */
@@ -438,7 +438,7 @@ static struct gb_buf *gb_pin_user_buf(u64 vaddr, size_t size, u32 flags)
 	buf->size = aligned_size;
 
 	buf->id = 0;
-	buf->tier = GB_TIER2_DDR4;
+	buf->tier = GB_TIER2_SDDR;
 	buf->alloc_flags = flags;
 	buf->alloc_jiffies = jiffies;
 	buf->last_jiffies = jiffies;
@@ -486,7 +486,7 @@ static struct gb_buf *gb_alloc_buf(size_t size, u32 flags)
 	}
 
 	if (t2_used + size > t2_max) {
-		/* Tier 2 (DDR4) full — try Tier 3 (NVMe-spillable) */
+		/* Tier 2 (System DDR) full — try Tier 3 (NVMe-spillable) */
 		if (t3_used + size > t3_max) {
 			pr_warn(DRIVER_NAME
 				": T3 NVMe cap reached — %dGB limit, used=%lluMB\n",
@@ -494,7 +494,7 @@ static struct gb_buf *gb_alloc_buf(size_t size, u32 flags)
 			return ERR_PTR(-ENOSPC);
 		}
 		tier3 = true;
-		gb_dbg("T2 DDR4 full (%lluMB/%dGB) — spilling to T3 NVMe\n",
+		gb_dbg("T2 System DDR full (%lluMB/%dGB) — spilling to T3 NVMe\n",
 		       t2_used >> 20, virtual_vram_gb);
 	}
 
@@ -506,7 +506,7 @@ static struct gb_buf *gb_alloc_buf(size_t size, u32 flags)
 	 * Tier 3 (NVMe-spillable): force 4K pages, no hugepages.
 	 * GFP_HIGHUSER allows the kernel to reclaim/swap these pages
 	 * to NVMe under memory pressure — that IS the spill mechanism.
-	 * Tier 2 (DDR4): use hugepages for lower DMA scatter overhead.
+	 * Tier 2 (System DDR): use hugepages for lower DMA scatter overhead.
 	 */
 	if (tier3)
 		goto alloc_4k;
@@ -566,12 +566,12 @@ alloc_4k:
 		buf->npages    = np;
 		buf->size      = size;
 		gb_dbg("allocated %u pages (%zuMB, 4K %s)\n",
-		       np, size >> 20, tier3 ? "NVMe-spillable" : "DDR4");
+		       np, size >> 20, tier3 ? "NVMe-spillable" : "System DDR");
 	}
 
 done:
 	buf->id          = 0;
-	buf->tier        = tier3 ? GB_TIER3_NVME : GB_TIER2_DDR4;
+	buf->tier        = tier3 ? GB_TIER3_NVME : GB_TIER2_SDDR;
 	buf->alloc_flags = flags;
 	buf->alloc_jiffies = jiffies;
 	buf->last_jiffies  = jiffies;
@@ -614,7 +614,7 @@ static long gb_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		    req.size > (u64)virtual_vram_gb * (1ULL << 30))
 			return -EINVAL;
 
-		/* 1. Pin DDR4 pages */
+		/* 1. Pin System DDR pages */
 		buf = gb_alloc_buf((size_t)req.size, req.flags);
 		if (IS_ERR(buf))
 			return PTR_ERR(buf);
@@ -858,7 +858,7 @@ static long gb_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 		/* Move T2 accounting to T3 (kernel reclaim handles actual page-out
 		 * for GFP_HIGHUSER 4K pages; hugepage T2 buffers get soft-evicted) */
-		if (buf->tier == GB_TIER2_DDR4) {
+		if (buf->tier == GB_TIER2_SDDR) {
 			atomic64_sub(buf->size, &gb_dev.pool_allocated);
 			atomic64_add(buf->size, &gb_dev.nvme_allocated);
 			buf->tier = GB_TIER3_NVME;

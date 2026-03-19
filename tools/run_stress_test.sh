@@ -9,7 +9,7 @@ set -e
 echo "=========================================="
 echo "GreenBoost v2.2 — 3-Tier Stress Test"
 echo "  T1 VRAM : 12 GB  RTX 5070"
-echo "  T2 DDR4 : 51 GB  pool"
+echo "  T2 System DDR : 51 GB  pool"
 echo "  T3 NVMe : 576 GB swap"
 echo "=========================================="
 echo ""

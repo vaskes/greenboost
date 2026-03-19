@@ -5,7 +5,7 @@
 #
 # 3-tier memory hierarchy:
 #   Tier 1 — RTX 5070 VRAM      12 GB   ~336 GB/s GDDR7  (hot layers)
-#   Tier 2 — DDR4 pool          51 GB   ~57.6 GB/s dual-ch (cold layers)
+#   Tier 2 — System DDR pool          51 GB   ~57.6 GB/s dual-ch (cold layers)
 #   Tier 3 — NVMe swap          64 GB   ~7.25 GB/s seq     (frozen pages, auto-sized)
 #   Combined capacity           75 GB   (T3 expandable up to 200+ GB)
 #
@@ -27,7 +27,7 @@
 #
 # ENVIRONMENT (for load command):
 #   GPU_PHYS_GB=12     physical VRAM in GB       (RTX 5070 default)
-#   VIRT_VRAM_GB=51    DDR4 pool size in GB      (80% of 64 GB DDR4)
+#   VIRT_VRAM_GB=51    System DDR pool size in GB      (80% of 64 GB System DDR)
 #   RESERVE_GB=12      minimum free system RAM to always maintain
 #   NVME_SWAP_GB=64    total NVMe swap capacity  (auto-detected; 64 GB default)
 #   NVME_POOL_GB=58    GreenBoost soft cap on T3 allocations
@@ -175,7 +175,7 @@ print_detected_hardware() {
 set_owner_workstation_params() {
     GPU_NAME="ASUS RTX 5070 OC (GB205)"
     CPU_NAME="Intel Core i9-14900KF (8Px2HT + 16E = 32 logical, golden CPU 4-7 @ 6GHz)"
-    RAM_TYPE="DDR4"
+    RAM_TYPE="System DDR"
     RAM_SPEED_MT="3600"
     NVME_SIZE_GB=4000
     GB_PHYS=12
@@ -219,7 +219,7 @@ check_deps() {
     fi
 
     if lsmod | grep -q "^nvidia_uvm "; then
-        info "NVIDIA UVM     : loaded  ✓  (managed memory / DDR4 overflow ready)"
+        info "NVIDIA UVM     : loaded  ✓  (managed memory / System DDR overflow ready)"
     else
         warn "nvidia_uvm not loaded — CUDA UVM overflow unavailable"
         warn "Fix: sudo modprobe nvidia_uvm"
@@ -329,7 +329,7 @@ SYSCTLEOF
 }
 
 cmd_build() {
-    info "Building GreenBoost v2.5 (3-tier: VRAM + DDR4 + NVMe)..."
+    info "Building GreenBoost v2.5 (3-tier: VRAM + System DDR + NVMe)..."
     make -C "$MODULE_DIR" all || die "Build failed — check output above"
     info "Build complete:"
     info "  Kernel module : $MODULE_DIR/greenboost.ko"
@@ -370,7 +370,7 @@ PROFEOF
     # Standalone wrapper
     cat > /usr/local/bin/greenboost-run << WRAPEOF
 #!/usr/bin/env bash
-# Run a CUDA application with GreenBoost DDR4 overflow enabled
+# Run a CUDA application with GreenBoost System DDR overflow enabled
 LD_PRELOAD="$SHIM_DEST/$SHIM_LIB" "\$@"
 WRAPEOF
     chmod +x /usr/local/bin/greenboost-run
@@ -418,7 +418,7 @@ cmd_load() {
     info "GreenBoost v2.5 loaded — 3-tier pool active!"
     info ""
     info "  T1 RTX 5070 VRAM : ${phys} GB   ~336 GB/s  [hot layers]"
-    info "  T2 DDR4 pool     : ${virt} GB    ~50 GB/s  [cold layers]"
+    info "  T2 System DDR pool     : ${virt} GB    ~50 GB/s  [cold layers]"
     info "  T3 NVMe swap     : ${nvme_sw} GB  ~1.8 GB/s [frozen pages]"
     info "  ─────────────────────────────────────────"
     info "  Combined view    : $(( phys + virt + nvme_sw )) GB total model capacity"
@@ -710,7 +710,7 @@ cmd_tune_sysctl() {
 # Do NOT edit other sysctl.d files; make changes here instead.
 
 # ── Swap / memory pressure ───────────────────────────────────────────────
-# Keep LLM weights in DDR4 (T2); only spill to NVMe (T3) under real pressure.
+# Keep LLM weights in System DDR (T2); only spill to NVMe (T3) under real pressure.
 vm.swappiness = 10
 
 # ── Write-back (Samsung 990 EVO Plus sustains 6,300 MB/s writes) ─────────
@@ -957,7 +957,7 @@ cmd_help() {
     echo "Target : ASUS RTX 5070 12 GB + 64 GB DDR4-3600 + 4 TB Samsung 990 Evo Plus NVMe"
     echo ""
     echo "  Tier 1  RTX 5070 VRAM      12 GB   ~336 GB/s  [hot layers]"
-    echo "  Tier 2  DDR4 pool          51 GB    ~50 GB/s  [cold layers, hugepages]"
+    echo "  Tier 2  System DDR pool          51 GB    ~50 GB/s  [cold layers, hugepages]"
     echo "  Tier 3  NVMe swap          64 GB    ~1.8 GB/s  [frozen pages, swappable 4K]"
     echo "          ─────────────────────────────────────"
     echo "          Combined capacity   75 GB (T3 expandable to 200+ GB)"
@@ -987,14 +987,14 @@ cmd_help() {
     echo ""
     echo "ENVIRONMENT (for load):"
     echo "  GPU_PHYS_GB=12     Physical VRAM in GB          (RTX 5070 default: 12)"
-    echo "  VIRT_VRAM_GB=51    DDR4 pool size in GB         (default: 51, 80% of 64 GB)"
+    echo "  VIRT_VRAM_GB=51    System DDR pool size in GB         (default: 51, 80% of 64 GB)"
     echo "  RESERVE_GB=12      System RAM to keep free      (default: 12)"
     echo "  NVME_SWAP_GB=64    NVMe swap capacity in GB     (default: 64, auto-detected)"
     echo "  NVME_POOL_GB=58    GreenBoost T3 soft cap in GB (default: 58)"
     echo ""
     echo "  Example: sudo VIRT_VRAM_GB=48 NVME_SWAP_GB=64 ./greenboost_setup.sh load"
     echo ""
-    echo "CUDA SHIM (transparent DDR4 overflow via NVIDIA UVM):"
+    echo "CUDA SHIM (transparent System DDR overflow via NVIDIA UVM):"
     echo "  Prerequisite  : sudo modprobe nvidia_uvm"
     echo "  One-shot      : LD_PRELOAD=./libgreenboost_cuda.so  ./your_cuda_app"
     echo "  After install : greenboost-run  ./your_cuda_app"
@@ -1356,7 +1356,7 @@ cmd_optimize_model() {
             || echo -e "    $miss  $exllama_dir"
         local elv3_cache="$exllama_dir/exllamav3/cache/greenboost.py"
         [[ -f "$elv3_cache" ]] \
-            && echo -e "    $ok  CacheLayer_greenboost (GreenBoost DDR4 KV cache bridge)" \
+            && echo -e "    $ok  CacheLayer_greenboost (GreenBoost System DDR KV cache bridge)" \
             || echo -e "    $miss  CacheLayer_greenboost not found"
 
         echo ""
@@ -1425,15 +1425,15 @@ cmd_optimize_model() {
         fi
     fi
 
-    # ── ExLlamaV3 + GreenBoost DDR4 KV cache ─────────────────────────────
+    # ── ExLlamaV3 + GreenBoost System DDR KV cache ─────────────────────────────
     if [[ "$strategy" == "exllama" || "$strategy" == "all" ]]; then
-        _sect_opt "ExLlamaV3 + GreenBoost DDR4 KV Cache"
+        _sect_opt "ExLlamaV3 + GreenBoost System DDR KV Cache"
         if [[ ! -d "$exllama_dir" ]]; then
             warn "  ExLlamaV3 not found at $exllama_dir"
         else
             info "  ExLlamaV3: $exllama_dir"
-            info "  CacheLayer_greenboost: routes KV cache → Tier 2 DDR4 DMA-BUF pages"
-            info "  Benefit: 131K context without VRAM OOM (KV cache in DDR4, not VRAM)"
+            info "  CacheLayer_greenboost: routes KV cache → Tier 2 System DDR DMA-BUF pages"
+            info "  Benefit: 131K context without VRAM OOM (KV cache in System DDR, not VRAM)"
             echo ""
             # Install if needed
             if [[ -d "$venv_dir" ]]; then
@@ -1455,7 +1455,7 @@ cmd_optimize_model() {
             echo ""
             info "  Convert HF model to EXL3 (4× smaller, faster decode):"
             info "    $MODULE_DIR/tools/greenboost-exllama.sh --model THUDM/glm-4.7-flash-hf --exl3-convert --bpw 4.0"
-            info "  After EXL3 (4bpw, ~8 GB): fits in VRAM — no DDR4 overflow needed"
+            info "  After EXL3 (4bpw, ~8 GB): fits in VRAM — no System DDR overflow needed"
         fi
     fi
 
@@ -1489,7 +1489,7 @@ cmd_optimize_model() {
         else
             info "  ModelOpt PTQ: no retraining — calibration only (~5-30 min)"
             info "  Scheme: $quant  |  Model: ${hf_model:-$model}"
-            info "  Result: 2-4× smaller model → less Tier 2 DDR4 pressure"
+            info "  Result: 2-4× smaller model → less Tier 2 System DDR pressure"
             echo ""
             if [[ -n "$hf_model" ]]; then
                 info "  Running PTQ on $hf_model ..."
@@ -1651,9 +1651,9 @@ cmd_diagnose() {
         _fail "nvidia NOT loaded — run: sudo modprobe nvidia"
     fi
     if lsmod | grep -q "^nvidia_uvm "; then
-        _chk "nvidia_uvm loaded (DDR4 UVM overflow available)"
+        _chk "nvidia_uvm loaded (System DDR UVM overflow available)"
     else
-        _fail "nvidia_uvm NOT loaded — DDR4 overflow via UVM disabled"
+        _fail "nvidia_uvm NOT loaded — System DDR overflow via UVM disabled"
         _rec "sudo modprobe nvidia_uvm && echo nvidia_uvm | sudo tee /etc/modules-load.d/nvidia-uvm.conf"
     fi
     local vram_free_mb="" vram_total_mb=""
@@ -1790,7 +1790,7 @@ cmd_diagnose() {
 
     # HugeTLB pages — must be 0 (GreenBoost uses buddy allocator, not HugeTLB pool)
     # Pre-allocating HugeTLB pages locks RAM away from the buddy allocator, making
-    # the OOM guard always fire and blocking all T2 DDR4 allocations.
+    # the OOM guard always fire and blocking all T2 System DDR allocations.
     local hp_total
     hp_total=$(cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages 2>/dev/null || echo 0)
     if [[ $hp_total -eq 0 ]]; then
@@ -1856,7 +1856,7 @@ except:
         local PROMPT="List all 8 planets of the solar system in order from the Sun, one per line, prefixed with their number."
         local test_start; test_start=$(date --iso-8601=seconds)
 
-        # num_gpu=999 forces all layers to GPU so the shim can route DDR4 overflow
+        # num_gpu=999 forces all layers to GPU so the shim can route System DDR overflow
         _info "Sending inference request (stream=false, num_predict=150, num_gpu=999)..."
         local response; response=$(curl -s --max-time 400 \
             http://127.0.0.1:11434/api/generate \
@@ -1936,13 +1936,13 @@ except Exception as e:
         if [[ "$gpu_layers" == "?" ]]; then
             _warn "Could not read GPU layer count — check: journalctl -u ollama | grep offloaded"
         elif [[ "$gpu_n" -eq 0 ]]; then
-            _fail "0 GPU layers — model running CPU-ONLY (GreenBoost DDR4 overflow not working)"
+            _fail "0 GPU layers — model running CPU-ONLY (GreenBoost System DDR overflow not working)"
             _rec  "Fix shim: cd $MODULE_DIR && make shim && sudo ./deploy_fix.sh && sudo systemctl restart ollama"
         elif [[ "$gpu_n" -lt "$gpu_total" ]]; then
             _warn "Partial GPU offload: $gpu_layers layers (expected $gpu_total/$(echo $gpu_total)) — cuDeviceTotalMem hook missing or num_gpu not passed"
             _rec  "Rebuild shim: make shim && sudo cp libgreenboost_cuda.so /usr/local/lib/ && sudo systemctl restart ollama"
         else
-            _chk  "Full GPU offload: $gpu_layers layers (all layers via GreenBoost DDR4 overflow)"
+            _chk  "Full GPU offload: $gpu_layers layers (all layers via GreenBoost System DDR overflow)"
         fi
 
         # Evaluate throughput
@@ -1951,7 +1951,7 @@ except Exception as e:
             _fail "Throughput ${tps} tok/s — very slow (likely CPU fallback or model hung)"
             _rec  "Check Ollama logs: journalctl -u ollama --since '5 min ago' | grep -E 'offloaded|cudaMalloc'"
         elif [[ $tps_int -lt 50 ]]; then  # < 5 tok/s
-            _warn "Throughput ${tps} tok/s — partial GPU (PCIe/DDR4 bandwidth limit expected for this model size)"
+            _warn "Throughput ${tps} tok/s — partial GPU (PCIe/System DDR bandwidth limit expected for this model size)"
         else
             _chk  "Throughput ${tps} tok/s — good"
         fi
@@ -1984,7 +1984,7 @@ except Exception as e:
     # VRAM headroom vs model sizes
     local headroom; headroom=$(echo "$env_str" | grep -oP 'GREENBOOST_VRAM_HEADROOM_MB=\d+' | cut -d= -f2)
     headroom=${headroom:-1024}
-    _info "GREENBOOST_VRAM_HEADROOM_MB=$headroom — shim overflows to DDR4 when VRAM free < this"
+    _info "GREENBOOST_VRAM_HEADROOM_MB=$headroom — shim overflows to System DDR when VRAM free < this"
     if [[ -n "$vram_total_mb" && $headroom -gt $(( vram_total_mb / 6 )) ]]; then
         _rec "GREENBOOST_VRAM_HEADROOM_MB=$headroom may be too conservative for ${vram_total_mb}MB GPU — try 512"
     fi

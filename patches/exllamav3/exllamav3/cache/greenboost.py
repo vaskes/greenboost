@@ -2,12 +2,12 @@
 GreenBoost KV cache layer for ExLlamaV3.
 Copyright (C) 2024-2026 Ferran Duarri. GPL v2 / Commercial — see LICENSE.
 
-Routes KV cache allocations through GreenBoost Tier 2 (DDR4 DMA-BUF pinned pages)
+Routes KV cache allocations through GreenBoost Tier 2 (System DDR DMA-BUF pinned pages)
 instead of GPU VRAM. Enables inference with contexts that exceed VRAM capacity.
 
 Memory layout:
   - K and V each get their own DMA-BUF from /dev/greenboost
-  - DMA-BUF pages are pinned DDR4 (alloc_pages GFP_KERNEL|__GFP_COMP in kernel)
+  - DMA-BUF pages are pinned System DDR (alloc_pages GFP_KERNEL|__GFP_COMP in kernel)
   - mmap'd into userspace and wrapped as zero-copy numpy→PyTorch CPU tensors
   - GPU attention: ExLlamaV3 calls .to(device) per-layer — PCIe 4.0 x16 ~32 GB/s
 
@@ -79,7 +79,7 @@ def _gb_open() -> int:
 
 def _gb_alloc(gb_fd: int, size_bytes: int) -> tuple[int, mmap.mmap | None]:
     """
-    Allocate `size_bytes` bytes from GreenBoost Tier 2 (DDR4).
+    Allocate `size_bytes` bytes from GreenBoost Tier 2 (System DDR).
 
     Returns (dma_buf_fd, mmap_obj) on success, (-1, None) on failure.
     The caller owns both the fd and the mmap and must close them.
@@ -130,10 +130,10 @@ def _mm_to_tensor(mm: mmap.mmap, shape: tuple, dtype=np.float16) -> torch.Tensor
 
 class CacheLayer_greenboost(CacheLayer):
     """
-    ExLlamaV3 KV cache layer backed by GreenBoost Tier 2 DDR4 DMA-BUF pages.
+    ExLlamaV3 KV cache layer backed by GreenBoost Tier 2 System DDR DMA-BUF pages.
 
     Drop-in replacement for CacheLayer_fp16 for layers that overflow VRAM.
-    K and V tensors live in pinned DDR4 as zero-copy CPU tensors.
+    K and V tensors live in pinned System DDR as zero-copy CPU tensors.
 
     Usage (ExLlamaV3 Cache):
         from exllamav3.cache.greenboost import CacheLayer_greenboost
@@ -188,7 +188,7 @@ class CacheLayer_greenboost(CacheLayer):
 
     @override
     def alloc(self, device: torch.device):
-        """Allocate K and V tensors, preferring GreenBoost DDR4."""
+        """Allocate K and V tensors, preferring GreenBoost System DDR."""
         self.device = device
 
         if self.shape is None:
@@ -203,7 +203,7 @@ class CacheLayer_greenboost(CacheLayer):
             self._v_fd, self._v_mm = _gb_alloc(self._gb_fd, size_bytes)
 
         if self._k_mm is not None and self._v_mm is not None:
-            # Zero-copy mmap → numpy → torch (CPU tensor, DDR4-backed)
+            # Zero-copy mmap → numpy → torch (CPU tensor, System DDR-backed)
             self.k = _mm_to_tensor(self._k_mm, self.shape, np.float16)
             self.v = _mm_to_tensor(self._v_mm, self.shape, np.float16)
             self._using_greenboost = True
@@ -211,7 +211,7 @@ class CacheLayer_greenboost(CacheLayer):
                 mb = size_bytes / 1024 / 1024
                 log.info(
                     "[GreenBoost cache] layer cache_id=%s  K+V = 2×%.0f MB  "
-                    "→ Tier 2 DDR4 (fd k=%d v=%d)",
+                    "→ Tier 2 System DDR (fd k=%d v=%d)",
                     self.cache_id, mb, self._k_fd, self._v_fd
                 )
         else:
@@ -240,7 +240,7 @@ class CacheLayer_greenboost(CacheLayer):
         """
         Return (k, v) tensors.
 
-        If k/v are CPU tensors (GreenBoost DDR4), ExLlamaV3's attention module
+        If k/v are CPU tensors (GreenBoost System DDR), ExLlamaV3's attention module
         will call .to(device) before running GPU attention.
         """
         return self.k, self.v
@@ -303,7 +303,7 @@ class CacheLayer_greenboost(CacheLayer):
     # -----------------------------------------------------------------------
 
     def is_greenboost(self) -> bool:
-        """True if K/V are backed by GreenBoost DDR4 DMA-BUF pages."""
+        """True if K/V are backed by GreenBoost System DDR DMA-BUF pages."""
         return self._using_greenboost
 
     def get_dma_fds(self) -> tuple[int, int]:
@@ -361,7 +361,7 @@ class GreenBoostCache:
 
         model = ExLlamaV3(config)
         cache = GreenBoostCache(model, max_num_tokens=32768)
-        # cache is a standard ExLlamaV3 Cache backed by DDR4
+        # cache is a standard ExLlamaV3 Cache backed by System DDR
 
     The /dev/greenboost fd is opened once and shared across all layers (efficiency).
     If GreenBoost is unavailable, falls back transparently to CPU RAM.
