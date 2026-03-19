@@ -54,7 +54,7 @@ sudo ./greenboost_setup.sh optimize-model --model THUDM/glm-4.7-flash-hf --strat
 
 The best strategy is to shrink the model until it fits in VRAM — either with EXL3
 quantization or ModelOpt PTQ — and use GreenBoost's System DDR pool for KV cache only.
-The PCIe 4.0 link (~32 GB/s) is the hard bottleneck when weights overflow VRAM.
+The PCIe link is the hard bottleneck when weights overflow VRAM (~32 GB/s on PCIe 4 x16, ~64 GB/s on PCIe 5 x16).
 
 ---
 

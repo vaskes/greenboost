@@ -21,11 +21,11 @@ Total addressable memory: **T1 (12 GB) + T2 (51 GB) + T3 (auto-sized, ~128 GB de
 | Tier | Device | Capacity | Bandwidth | Latency | Role |
 |------|--------|----------|-----------|---------|------|
 | **T1** | RTX 5070 GDDR7 | 12 GB | ~336 GB/s | ~100 ns | Hot layers — native GPU compute |
-| **T2** | DDR4-3600 pool | 51 GB | ~57.6 GB/s local / ~32 GB/s via PCIe 4.0 | ~50 ns | Cold layers — pinned DMA-BUF pages |
+| **T2** | System DDR pool | 51 GB | ~57.6 GB/s local / ~32 GB/s (PCIe 4 x16) / ~64 GB/s (PCIe 5 x16) | ~50 ns | Cold layers — pinned DMA-BUF pages |
 | **T3** | NVMe swap | auto-sized | ~1.8 GB/s | ~100 µs | Frozen pages — kernel swap subsystem |
 
 **Design principle:** A 30B model's active layer fits in T1. The rest of the KV cache and
-cold weight tensors live in T2 over PCIe 4.0 x16 (~32 GB/s DMA bandwidth). T3 is a safety
+cold weight tensors live in T2 over the PCIe link (~32 GB/s on PCIe 4 x16, ~64 GB/s on PCIe 5 x16). T3 is a safety
 net — it is rarely touched during normal inference.
 
 **T3 sizing:** `full-install` auto-sizes T3 as `2×(T1+T2)`, floored at 64 GB and capped at
@@ -351,7 +351,7 @@ watch -n1 'swapon --show'
 | + ModelOpt FP8 → 16 GB | 10–25 | 1–5s | Model fits better in T1 |
 | ExLlamaV3 EXL3 2bpw → 8 GB | 25–60 | 0.5–2s | Full VRAM fit, maximum speed |
 
-PCIe 4.0 x16 (~32 GB/s) is the main bottleneck when the model exceeds VRAM.
+The PCIe link is the main bottleneck when the model exceeds VRAM (~32 GB/s on PCIe 4 x16, ~64 GB/s on PCIe 5 x16).
 Reducing model size (EXL3 or PTQ) has the largest impact on decode speed.
 
 ---

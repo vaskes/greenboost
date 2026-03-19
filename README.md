@@ -36,7 +36,7 @@ I have an RTX 5070 with 12 GB VRAM and I wanted to run `glm-4.7-flash:q8_0`, whi
   a complete workstation.
 
 None of those felt right, so I built an alternative: route the overflow memory to System DDR via
-DMA-BUF, which gives the GPU direct access to system RAM over PCIe 4.0 without a CPU
+DMA-BUF, which gives the GPU direct access to system RAM over the PCIe link without a CPU
 copy involved.
 
 My system: i9-14900KF, RTX 5070 12 GB (Blackwell, compute capability 12.0), 64 GB
@@ -53,8 +53,8 @@ Two components cooperate:
 Allocates pinned System DDR pages using the buddy allocator (2 MB compound pages for efficiency)
 and exports them as DMA-BUF file descriptors. The GPU can then import these pages as
 CUDA external memory via `cudaImportExternalMemory`. From CUDA's perspective, those pages
-look like device-accessible memory — it doesn't know they live in system RAM. The PCIe 4.0
-x16 link handles the actual data movement (~32 GB/s).
+look like device-accessible memory — it doesn't know they live in system RAM. The PCIe link
+handles the actual data movement (~32 GB/s on PCIe 4 x16, ~64 GB/s on PCIe 5 x16).
 
 A sysfs interface (`/sys/class/greenboost/greenboost/pool_info`) lets you monitor usage
 live. A watchdog kernel thread monitors RAM and NVMe pressure and signals userspace before
@@ -80,7 +80,7 @@ real pointer without recursion) and returns hooked versions of `cuDeviceTotalMem
 | Tier | Device | Capacity | Bandwidth | Used for |
 |------|--------|----------|-----------|---------|
 | T1 | RTX 5070 VRAM | 12 GB | ~336 GB/s | Hot layers, active compute |
-| T2 | System DDR pool | 51 GB | ~32 GB/s via PCIe 4.0 | KV cache, cold weights |
+| T2 | System DDR pool | 51 GB | ~32 GB/s (PCIe 4 x16) / ~64 GB/s (PCIe 5 x16) | KV cache, cold weights |
 | T3 | NVMe swap | 64 GB | ~1.8 GB/s | Safety overflow (rarely hit) |
 
 For the 32 GB model: T1 holds the hot layers, T2 holds the rest. T3 exists as a safety
