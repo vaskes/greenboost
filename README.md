@@ -365,5 +365,7 @@ or different inference engines beyond Ollama and ExLlamaV3.
 
 
 ## Non direct Contributors
-v2.5 includes those changes:
-CUDA shim safety fix: https://github.com/Project-HAMi/HAMi-core
+
+**v2.4** — UVM path improvements inspired by [HAMi-core](https://github.com/Project-HAMi/HAMi-core),
+a Kubernetes GPU virtualization project that virtualizes VRAM for containers.
+GreenBoost borrowed the `cuMemAdvise` prefetch pattern for its UVM fallback.
