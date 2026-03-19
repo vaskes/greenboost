@@ -159,7 +159,7 @@ The installer runs the following steps automatically:
 
 ```bash
 # Run Ollama as normal — GreenBoost is transparent
-ollama run glm4:latest
+ollama run glm-4.7-flash:q8_0
 
 # ExLlamaV3 with GreenBoost DDR4 KV cache offload:
 ./tools/greenboost-exllama.sh --model /opt/models/glm-4.7-flash-exl3
