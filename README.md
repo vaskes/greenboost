@@ -214,7 +214,7 @@ There is still much more to do, I guess. I don't know when my hardware will surp
 
 I personally have much to learn about AI Inference. That's why this project has a tools sections, to dive further into AI inference.
 
-Hope you all enjoy greenboost kernel modules, if your workstations burns call Nguyen, he had been the culpit ;)
+Hope you all enjoy greenboost kernel modules, if your workstation burns call Nguyen, he had been the culpit ;)
 
 ---
 
