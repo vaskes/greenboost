@@ -146,8 +146,9 @@ processes (GDM, shells, systemd helpers) through a two-stage constructor:
   constructor exits immediately. Apps that link libcuda statically (llama.cpp,
   TensorRT-LLM) activate automatically via this path.
 - **Stage 2:** If `GREENBOOST_ACTIVE=1` is set, the shim proceeds to load libcuda
-  actively. Used for apps that dlopen CUDA lazily at runtime (Ollama, vLLM, PyTorch).
-  Set automatically by the Ollama/llama-server systemd units and `greenboost-run`.
+  actively. Used for apps that dlopen CUDA lazily at runtime (Ollama, vLLM, PyTorch,
+  TGI, CTranslate2, ExLlamaV3). Set automatically by the Ollama/llama-server systemd
+  units and `greenboost run`.
 
 ### Allocation Flow
 
@@ -290,6 +291,9 @@ sudo ./greenboost_setup.sh full-install
 
 # Hardcoded optimal preset for owner's workstation:
 sudo ./greenboost_setup.sh full-install --owner-workstation
+
+# Offline / air-gapped workstation (skip GitLab version check):
+sudo ./greenboost_setup.sh full-install --skip-update-check
 ```
 
 **Detected parameters:**

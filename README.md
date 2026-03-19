@@ -113,6 +113,9 @@ cd nvidia_greenboost
 # and computes optimal parameters at install time:
 sudo ./greenboost_setup.sh full-install
 
+# Offline / air-gapped workstation — skip the GitLab version check:
+sudo ./greenboost_setup.sh full-install --skip-update-check
+
 # After reboot, verify everything is working:
 sudo ./greenboost_setup.sh diagnose
 ```
@@ -174,10 +177,10 @@ docker run --gpus all \
   my-llm-image python run_model.py
 
 # Force Path B only (skip kernel-module path entirely):
-GREENBOOST_USE_DMA_BUF=0 greenboost-run python your_script.py
+GREENBOOST_USE_DMA_BUF=0 greenboost run python your_script.py
 
 # Skip Path B, go straight to UVM:
-GREENBOOST_NO_HOSTREG=1 greenboost-run python your_script.py
+GREENBOOST_NO_HOSTREG=1 greenboost run python your_script.py
 ```
 
 The three overflow paths and when each is used:
@@ -207,7 +210,10 @@ instructions see **[container_vm_mode.md](container_vm_mode.md)**.
 ## Usage
 
 ```
-sudo ./greenboost_setup.sh <command>
+sudo ./greenboost_setup.sh [--skip-update-check] <command>
+
+GLOBAL FLAGS:
+  --skip-update-check  Skip GitLab version check (offline / air-gapped workstations)
 
 COMMANDS:
   install     Build and install module + CUDA shim system-wide
@@ -230,6 +236,8 @@ COMMANDS:
                Optimize LLM for max speed: TRT-LLM, LoRA, ExLlamaV3
   help        Show this help
 
+CUDA SHIM WRAPPER:
+  greenboost run <app> [args...]   Run a CUDA app with GreenBoost overflow enabled
 ```
 
 ** Greenboost_setup.sh had been adapted to detect if installation happens under RedHat based system and execute Alan's script. 
