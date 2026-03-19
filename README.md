@@ -196,7 +196,7 @@ instructions see **[container_vm_mode.md](container_vm_mode.md)**.
 
 ---
 
-## What this code is based on — and where I come from
+## What this code is based on, and where it comes from
 
 I started coding at 12, in JavaScript. A few years later I was into Cisco networking,
 capturing TCP/IP packets, playing with Linux back when Ubuntu was just starting to get
@@ -257,7 +257,7 @@ There is still much more to do I guess... do not know when I will be surprised a
 
 I personally have much to learn about AI Inference. That's why this project has a tools sections, to dive further into AI inference.
 
-Hope you all enjoy greenboost kernel modules, if your workstations burns call Nguyen, he had been the the culpit ;)
+Hope you all enjoy greenboost kernel modules, if your workstations burns call Nguyen, he had been the culpit ;)
 
 ---
 
