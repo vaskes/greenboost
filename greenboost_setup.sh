@@ -812,7 +812,7 @@ cmd_tune() {
     detect_hardware
 
     info "Tuning workstation for GreenBoost / LLM workloads..."
-    info "Hardware: ${CPU_NAME} | ${GPU_NAME} | ${RAM_TYPE}-${RAM_SPEED_MT} | ${NVME_SIZE_GB} GB NVMe"
+    info "Hardware: ${CPU_NAME} | ${GPU_NAME} | ${RAM_TYPE}-${RAM_SPEED_MT} MT/s | PCIe Gen ${PCIE_GEN} ${PCIE_WIDTH} (~${PCIE_BW_GBS} GB/s) | ${NVME_SIZE_GB} GB NVMe"
     echo ""
 
     # ── CPU governor → performance (P-cores run at max boost, not idle) ──
@@ -829,17 +829,36 @@ cmd_tune() {
     done
     info "NVMe scheduler    : none (was: mq-deadline)"
 
-    # ── NVMe read-ahead → 4 MB (large sequential model weight loading) ──
+    # ── NVMe read-ahead: scale to PCIe gen ───────────────────────────────
+    # PCIe 5 (64 GB/s) can sustain 8 MB sequential prefetch without stalling;
+    # PCIe 4 (32 GB/s) saturates at 4 MB; older gens use 2 MB.
+    local ra_kb=2048
+    [[ $PCIE_GEN -ge 4 ]] && ra_kb=4096
+    [[ $PCIE_GEN -ge 5 ]] && ra_kb=8192
     for ra in /sys/block/nvme*/queue/read_ahead_kb; do
-        [[ -w "$ra" ]] && echo 4096 > "$ra"
+        [[ -w "$ra" ]] && echo $ra_kb > "$ra"
     done
-    info "NVMe read_ahead   : 4096 KB = 4 MB (was: 128 KB)"
+    info "NVMe read_ahead   : ${ra_kb} KB  (scaled to PCIe Gen ${PCIE_GEN})"
 
     # ── NVMe nr_requests → 1024 ──────────────────────────────────────────
     for nr in /sys/block/nvme*/queue/nr_requests; do
         [[ -w "$nr" ]] && echo 1024 > "$nr"
     done
     info "NVMe nr_requests  : 1024"
+
+    # ── PCIe runtime PM → on (disable ASPM for GPU slot) ─────────────────
+    # With ASPM active the GPU link downclock to Gen 1 (2.5 GT/s) at idle.
+    # Forcing runtime PM "on" keeps the link at the negotiated gen during
+    # inference, preventing latency spikes on the first DMA transfer.
+    local gpu_pci_rt
+    gpu_pci_rt=$(ls /proc/driver/nvidia/gpus/ 2>/dev/null | head -1)
+    if [[ -n "$gpu_pci_rt" ]]; then
+        local pm_ctl="/sys/bus/pci/devices/${gpu_pci_rt}/power/control"
+        if [[ -w "$pm_ctl" ]]; then
+            echo on > "$pm_ctl"
+            info "PCIe GPU ASPM     : disabled (power/control=on, link stays at Gen ${PCIE_GEN})"
+        fi
+    fi
 
     # ── THP → always (GreenBoost 2 MB hugepage pool requires it) ─────────
     echo always > /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || true
@@ -894,7 +913,7 @@ cmd_tune_grub() {
 
     [[ -f "$grub_file" ]] || die "GRUB config not found: $grub_file"
 
-    info "Validating GRUB flags for: ${CPU_NAME} | ${GPU_NAME}"
+    info "Validating GRUB flags for: ${CPU_NAME} | ${GPU_NAME} | ${RAM_TYPE}-${RAM_SPEED_MT} MT/s | PCIe Gen ${PCIE_GEN} ${PCIE_WIDTH}"
     info "Kernel: $kver"
     echo ""
 
@@ -1030,7 +1049,7 @@ cmd_tune_sysctl() {
     local dest="/etc/sysctl.d/99-zzz-greenboost.conf"
 
     info "Writing definitive sysctl config: $dest"
-    info "Hardware: ${CPU_NAME} | ${GPU_NAME} | ${total_ram_gb:-$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024 ))} GB RAM | ${NVME_SIZE_GB} GB NVMe"
+    info "Hardware: ${CPU_NAME} | ${GPU_NAME} | ${RAM_TYPE}-${RAM_SPEED_MT} MT/s | PCIe Gen ${PCIE_GEN} ${PCIE_WIDTH} (~${PCIE_BW_GBS} GB/s) | ${NVME_SIZE_GB} GB NVMe"
     info "This file loads last (99-zzz) and wins over all conflicting files."
     echo ""
 
@@ -1048,10 +1067,15 @@ cmd_tune_sysctl() {
 
     # Write the header line with detected hardware (variables don't expand in 'HEREDOC')
     printf '# GreenBoost v2.5 — Definitive sysctl config\n' > "$dest"
-    printf '# Hardware: %s | %s | %s-%s | %s GB NVMe\n' \
-        "${CPU_NAME}" "${GPU_NAME}" "${RAM_TYPE}" "${RAM_SPEED_MT}" "${NVME_SIZE_GB}" >> "$dest"
+    printf '# Hardware: %s | %s | %s-%s MT/s | PCIe Gen %s %s (~%s GB/s) | %s GB NVMe\n' \
+        "${CPU_NAME}" "${GPU_NAME}" "${RAM_TYPE}" "${RAM_SPEED_MT}" \
+        "${PCIE_GEN}" "${PCIE_WIDTH}" "${PCIE_BW_GBS}" "${NVME_SIZE_GB}" >> "$dest"
     printf '# Loaded last (99-zzz) — wins all conflicts with earlier sysctl.d files.\n' >> "$dest"
     printf '# Do NOT edit other sysctl.d files; make changes here instead.\n' >> "$dest"
+
+    # vm.nr_overcommit_hugepages: scale to T2 pool size so the kernel can back
+    # the full pool with 2 MB THP pages.  GB_VIRT GB × 512 pages/GB = pages.
+    local overcommit_hp=$(( GB_VIRT * 512 ))
 
     cat >> "$dest" << 'SYSCTL_EOF'
 
@@ -1083,11 +1107,17 @@ vm.min_free_kbytes = 524288
 # Value 20 = moderate background compaction (0=off, 100=aggressive).
 vm.compaction_proactiveness = 20
 
-# Overcommit hugepage pool: 10240 × 2 MB = 20 GB pre-reserved for THP allocs.
-vm.nr_overcommit_hugepages = 10240
-
 # Keep inode/dentry caches alive — LLM loaders open thousands of weight files.
 vm.vfs_cache_pressure = 50
+SYSCTL_EOF
+
+    # Overcommit hugepage pool: sized to cover the full T2 System DDR pool.
+    # Formula: GB_VIRT × 512 = number of 2 MB pages.  RAM speed ${RAM_SPEED_MT} MT/s.
+    printf '# Overcommit hugepage pool: %d × 2 MB = %d GB — covers T2 pool (%d GB, %s-%s MT/s)\n' \
+        "$overcommit_hp" "$(( overcommit_hp * 2 / 1024 ))" "$GB_VIRT" "$RAM_TYPE" "$RAM_SPEED_MT" >> "$dest"
+    printf 'vm.nr_overcommit_hugepages = %d\n' "$overcommit_hp" >> "$dest"
+
+    cat >> "$dest" << 'SYSCTL_EOF'
 
 # Disable zone reclaim: single NUMA node — cross-zone reclaim wastes cycles.
 vm.zone_reclaim_mode = 0
