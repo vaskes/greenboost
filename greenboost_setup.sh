@@ -101,7 +101,8 @@ check_update() {
 # ---- Hardware detection -----------------------------------------------
 # Populates GB_PHYS, GB_VIRT, GB_RESERVE, GB_NVME_SWAP, GB_NVME_POOL,
 # GB_PCORES_MAX, GB_GOLDEN_MIN, GB_GOLDEN_MAX, GB_PCORES_ONLY,
-# RAM_TYPE, RAM_SPEED_MT, GPU_NAME, CPU_NAME, NVME_SIZE_GB.
+# RAM_TYPE, RAM_SPEED_MT, GPU_NAME, CPU_NAME, NVME_SIZE_GB,
+# PCIE_GEN, PCIE_WIDTH, PCIE_BW_GBS.
 # Safe to call multiple times — idempotent.
 
 detect_hardware() {
@@ -141,13 +142,39 @@ detect_hardware() {
     total_ram_kb=$(grep MemTotal /proc/meminfo | awk '{print $2}')
     local total_ram_gb=$(( total_ram_kb / 1024 / 1024 ))
 
-    RAM_TYPE=$(dmidecode -t memory 2>/dev/null \
-        | awk '/^\s*Type:/{t=$2} /^\s*Configured Memory Speed:/{s=$4; print t,s; exit}' \
-        | awk '{print $1}')
+    local dmi_mem
+    dmi_mem=$(dmidecode -t memory 2>/dev/null)
+    RAM_TYPE=$(echo "$dmi_mem" \
+        | awk '/^\s*Type:/{t=$2} /^\s*Configured Memory Speed:/{if(t && t!="Unknown") {print t; exit}}')
     [[ -z "$RAM_TYPE" || "$RAM_TYPE" == "Unknown" ]] && RAM_TYPE="DDR"
-    RAM_SPEED_MT=$(dmidecode -t memory 2>/dev/null \
+    RAM_SPEED_MT=$(echo "$dmi_mem" \
         | awk '/^\s*Configured Memory Speed:/{print $4; exit}')
-    [[ -z "$RAM_SPEED_MT" ]] && RAM_SPEED_MT="?"
+    [[ -z "$RAM_SPEED_MT" || "$RAM_SPEED_MT" == "Unknown" ]] && RAM_SPEED_MT="?"
+
+    # ── PCIe link (GPU slot) ──────────────────────────────────────────────
+    PCIE_GEN=0; PCIE_WIDTH="x?"; PCIE_BW_GBS=0
+    local gpu_pci
+    gpu_pci=$(ls /proc/driver/nvidia/gpus/ 2>/dev/null | head -1)
+    if [[ -n "$gpu_pci" ]] && command -v lspci &>/dev/null; then
+        local lnksta
+        lnksta=$(lspci -s "$gpu_pci" -v 2>/dev/null | grep -i "LnkSta:")
+        local speed_gts lanes
+        speed_gts=$(echo "$lnksta" | grep -oP 'Speed \K[0-9]+(?=GT/s)' | head -1)
+        lanes=$(echo "$lnksta"    | grep -oP 'Width x\K[0-9]+'           | head -1)
+        if [[ -n "$speed_gts" && $speed_gts -gt 0 ]]; then
+            if   [[ $speed_gts -ge 64 ]]; then PCIE_GEN=6
+            elif [[ $speed_gts -ge 32 ]]; then PCIE_GEN=5
+            elif [[ $speed_gts -ge 16 ]]; then PCIE_GEN=4
+            elif [[ $speed_gts -ge 8  ]]; then PCIE_GEN=3
+            elif [[ $speed_gts -ge 5  ]]; then PCIE_GEN=2
+            else                               PCIE_GEN=1; fi
+            PCIE_WIDTH="x${lanes:-?}"
+            # Bandwidth: GT/s × lanes × 128/130 / 8  (128b/130b encoding, Gen3+)
+            if [[ -n "$lanes" && $lanes -gt 0 ]]; then
+                PCIE_BW_GBS=$(( speed_gts * lanes * 128 / 130 / 8 ))
+            fi
+        fi
+    fi
 
     # safety reserve: 15% of RAM, min 8 GB, max 16 GB
     GB_RESERVE=$(( total_ram_gb * 15 / 100 ))
@@ -247,8 +274,12 @@ detect_hardware() {
 }
 
 print_detected_hardware() {
+    local pcie_info="Gen ${PCIE_GEN} ${PCIE_WIDTH}"
+    [[ $PCIE_BW_GBS -gt 0 ]] && pcie_info+="  (~${PCIE_BW_GBS} GB/s)"
+    [[ $PCIE_GEN -eq 0 ]]    && pcie_info="unknown (lspci not available or GPU not found)"
     info "Detected hardware:"
     info "  GPU   : ${GPU_NAME}  (${GB_PHYS} GB VRAM)"
+    info "  PCIe  : ${pcie_info}"
     info "  RAM   : ${RAM_TYPE}-${RAM_SPEED_MT} MT/s  ->  pool ${GB_VIRT} GB  (reserve ${GB_RESERVE} GB)"
     info "  CPU   : ${CPU_NAME}"
     info "  NVMe  : ${NVME_SIZE_GB} GB  ->  swap ${GB_NVME_SWAP} GB"
@@ -262,8 +293,11 @@ print_detected_hardware() {
 set_owner_workstation_params() {
     GPU_NAME="ASUS RTX 5070 OC (GB205)"
     CPU_NAME="Intel Core i9-14900KF (8Px2HT + 16E = 32 logical, golden CPU 4-7 @ 6GHz)"
-    RAM_TYPE="System DDR"
+    RAM_TYPE="DDR4"
     RAM_SPEED_MT="3600"
+    PCIE_GEN=4
+    PCIE_WIDTH="x16"
+    PCIE_BW_GBS=32
     NVME_SIZE_GB=4000
     GB_PHYS=12
     GB_VIRT=51
@@ -275,7 +309,7 @@ set_owner_workstation_params() {
     GB_GOLDEN_MAX=7
     GB_PCORES_ONLY=1
     GB_OLLAMA_CTX=131072
-    info "Owner-workstation preset applied (i9-14900KF | RTX 5070 12GB | 64GB DDR4-3600 | 4TB NVMe, 128 GB swap)"
+    info "Owner-workstation preset applied (i9-14900KF | RTX 5070 12GB | 64GB DDR4-3600 | PCIe 4 x16 | 4TB NVMe, 128 GB swap)"
 }
 
 # ---- Helpers -----------------------------------------------------------
