@@ -26,6 +26,9 @@
 #        ./greenboost_setup.sh build            — build only (no install)
 #        ./greenboost_setup.sh help             — show this help
 #
+# GLOBAL FLAGS (before or after the command):
+#   --skip-update-check  Skip GitLab version check (offline workstations)
+#
 # ENVIRONMENT (for load command):
 #   GPU_PHYS_GB=12     physical VRAM in GB       (RTX 5070 default)
 #   VIRT_VRAM_GB=51    system RAM pool size in GB      (80% of 64 GB DDR4)
@@ -103,14 +106,30 @@ check_update() {
 
 detect_hardware() {
     # ── GPU ──────────────────────────────────────────────────────────────
+    # nvidia-smi can hang when the driver is wedged (suspend/resume, Xid fault).
+    # One combined query avoids two separate NVML cold-init round trips.
+    # 30 s covers the worst-case first-call-as-root NVML initialization latency.
     if command -v nvidia-smi &>/dev/null; then
-        local gpu_mem_mib
-        gpu_mem_mib=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits \
-            2>/dev/null | head -1 | tr -d ' ')
-        GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 \
-            | sed 's/^[[:space:]]*//')
-        GB_PHYS=$(( ${gpu_mem_mib:-12288} / 1024 ))
-        [[ $GB_PHYS -lt 1 ]] && GB_PHYS=1
+        local smi_line smi_ec
+        smi_line=$(timeout 30 nvidia-smi \
+            --query-gpu=name,memory.total \
+            --format=csv,noheader,nounits 2>/dev/null | head -1)
+        smi_ec=${PIPESTATUS[0]}
+        if [[ $smi_ec -eq 124 ]]; then
+            warn "nvidia-smi timed out (>30 s) — GPU driver may be wedged."
+            warn "  Try: sudo systemctl restart nvidia-persistenced && sudo nvidia-smi"
+            GPU_NAME="Unknown (nvidia-smi timeout)"
+            GB_PHYS=12
+        elif [[ -z "$smi_line" ]]; then
+            warn "nvidia-smi returned no output — check: sudo nvidia-smi"
+            GPU_NAME="Unknown (nvidia-smi no output)"
+            GB_PHYS=12
+        else
+            GPU_NAME=$(echo "$smi_line" | cut -d, -f1 | sed 's/^[[:space:]]*//')
+            local gpu_mem_mib; gpu_mem_mib=$(echo "$smi_line" | cut -d, -f2 | tr -d ' ')
+            GB_PHYS=$(( gpu_mem_mib / 1024 ))
+            [[ $GB_PHYS -lt 1 ]] && GB_PHYS=1
+        fi
     else
         GPU_NAME="Unknown (nvidia-smi not found)"
         GB_PHYS=8
@@ -410,7 +429,7 @@ cmd_install_llama_configs() {
     # systemd helpers take the "not a CUDA process" path and remain inert.
     # Apps that statically link libcuda (llama.cpp, llama-server) get automatic
     # injection with no wrapper needed.  Apps that load CUDA lazily (Ollama, vLLM)
-    # still need GREENBOOST_ACTIVE=1 from their service unit or greenboost-run.
+    # still need GREENBOOST_ACTIVE=1 from their service unit or greenboost run.
     if ! grep -q "libgreenboost" /etc/ld.so.preload 2>/dev/null; then
         echo "$shim_path" >> /etc/ld.so.preload
         info "ld.so.preload: added $shim_path (transparent injection for static-CUDA apps)"
@@ -466,14 +485,14 @@ LLAMAEOF
         fi
     else
         info "llama-server binary not found — skipping systemd service"
-        info "  Use greenboost-run for CLI: greenboost-run llama-server ..."
+        info "  Use greenboost run for CLI: greenboost run llama-server ..."
         info "  If you install llama.cpp later, re-run: sudo ./greenboost_setup.sh install-llama-configs"
     fi
 
     echo ""
     info "llama.cpp / ik_llama.cpp integration complete."
     info "  systemd service: LD_PRELOAD + GREENBOOST_ACTIVE configured automatically"
-    info "  CLI usage      : greenboost-run llama-server --n-gpu-layers 999 ..."
+    info "  CLI usage      : greenboost run llama-server --n-gpu-layers 999 ..."
     info "  Use --n-gpu-layers 999 to push everything through the virtual VRAM pool."
 }
 
@@ -532,7 +551,7 @@ do_purge() {
     for f in \
         /etc/modprobe.d/greenboost.conf \
         /etc/profile.d/greenboost.sh \
-        /usr/local/bin/greenboost-run \
+        /usr/local/bin/greenboost \
         /etc/modules-load.d/greenboost.conf \
         /etc/udev/rules.d/99-greenboost.rules \
         /etc/udev/rules.d/99-nvme-greenboost.rules \
@@ -619,26 +638,35 @@ MODEOF
     cat > /etc/profile.d/greenboost.sh << PROFEOF
 # GreenBoost v2.5 — shell helpers
 export GREENBOOST_SHIM="$SHIM_DEST/$SHIM_LIB"
-# greenboost-run: for apps that load CUDA lazily (vLLM, PyTorch, etc.)
+# 'greenboost run': for apps that load CUDA lazily (vLLM, PyTorch, etc.)
 # Static-CUDA apps (llama.cpp, llama-server) work automatically via ld.so.preload.
-greenboost-run() { GREENBOOST_ACTIVE=1 LD_PRELOAD="\$GREENBOOST_SHIM" "\$@"; }
-export -f greenboost-run
+greenboost() {
+    case "\$1" in
+        run) shift; GREENBOOST_ACTIVE=1 LD_PRELOAD="\$GREENBOOST_SHIM" "\$@" ;;
+        *) echo "Usage: greenboost run <app> [args...]" >&2; return 1 ;;
+    esac
+}
+export -f greenboost
 PROFEOF
 
     # Standalone wrapper (sets GREENBOOST_ACTIVE for lazy-dlopen CUDA apps)
-    cat > /usr/local/bin/greenboost-run << WRAPEOF
+    cat > /usr/local/bin/greenboost << WRAPEOF
 #!/usr/bin/env bash
-# Run a CUDA application with GreenBoost system RAM overflow enabled.
+# GreenBoost CLI wrapper.
+# Usage: greenboost run <app> [args...]
 # Needed for apps that load CUDA lazily via dlopen (vLLM, PyTorch, etc.).
 # Static-CUDA apps (llama.cpp) work automatically via ld.so.preload.
-GREENBOOST_ACTIVE=1 LD_PRELOAD="$SHIM_DEST/$SHIM_LIB" "\$@"
+case "\$1" in
+    run) shift; GREENBOOST_ACTIVE=1 LD_PRELOAD="$SHIM_DEST/$SHIM_LIB" "\$@" ;;
+    *) echo "Usage: greenboost run <app> [args...]" >&2; exit 1 ;;
+esac
 WRAPEOF
-    chmod +x /usr/local/bin/greenboost-run
+    chmod +x /usr/local/bin/greenboost
 
     info ""
     info "Installation complete!"
     info "  Load module    : sudo modprobe greenboost"
-    info "  Run CUDA app   : greenboost-run your_cuda_app"
+    info "  Run CUDA app   : greenboost run your_cuda_app"
     info "  Pool status    : cat /sys/class/greenboost/greenboost/pool_info"
 }
 
@@ -1261,9 +1289,9 @@ cmd_help() {
     echo "CUDA SHIM (transparent system RAM overflow via NVIDIA UVM):"
     echo "  Prerequisite  : sudo modprobe nvidia_uvm"
     echo "  One-shot      : LD_PRELOAD=./libgreenboost_cuda.so  ./your_cuda_app"
-    echo "  After install : greenboost-run  ./your_cuda_app"
-    echo "  Threshold     : GREENBOOST_THRESHOLD_MB=512  greenboost-run  ./app"
-    echo "  Debug         : GREENBOOST_DEBUG=1  greenboost-run  ./app"
+    echo "  After install : greenboost run  ./your_cuda_app"
+    echo "  Threshold     : GREENBOOST_THRESHOLD_MB=512  greenboost run  ./app"
+    echo "  Debug         : GREENBOOST_DEBUG=1  greenboost run  ./app"
     echo ""
     echo "MONITORING:"
     echo "  cat /sys/class/greenboost/greenboost/pool_info   (3-tier table)"
@@ -2285,13 +2313,28 @@ except Exception as e:
 
 # ---- Entry point -------------------------------------------------------
 
+# Strip global flags before command dispatch.
+# --skip-update-check  Bypass the GitLab version check (use on offline workstations).
+GB_SKIP_UPDATE=0
+_ARGS=()
+for _arg in "$@"; do
+    case "$_arg" in
+        --skip-update-check) GB_SKIP_UPDATE=1 ;;
+        *) _ARGS+=("$_arg") ;;
+    esac
+done
+set -- "${_ARGS[@]}"
+unset _ARGS _arg
+
 COMMAND="${1:-help}"
 
 # Check for a newer release before any install / diagnose operation.
 # Skipped for non-modifying commands (status, unload, help, build).
+# Suppressed when --skip-update-check is passed (offline workstations).
 case "$COMMAND" in
     install|full-install|install-sys-configs|install-llama-configs|install-deps|diagnose)
-        check_update ; echo "" ;;
+        if [[ $GB_SKIP_UPDATE -eq 0 ]]; then check_update; fi
+        echo "" ;;
 esac
 
 case "$COMMAND" in
