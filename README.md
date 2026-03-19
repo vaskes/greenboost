@@ -2,7 +2,7 @@
 
 **Author:** Ferran Duarri
 **License:** GPL v2 (open-source)
-**Status:** First public release — after several months of testing on real hardware
+**Version:** 2.5
 
 <div align="center">
 
