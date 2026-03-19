@@ -97,7 +97,7 @@ the DMA-BUF import path right. I want to be clear that I didn't copy any of it �
 the architecture and wrote my own implementation, but the public NVIDIA driver source was
 a critical reference.
 
-Also check at how `llama.cpp` handles CPU offload, how ExLlamaV2/V3 structures its KV
+Also explored at how `llama.cpp` handles CPU offload, how ExLlamaV2/V3 structures its KV
 cache, and how vLLM's paged attention allocates memory. Understanding those patterns helped
 figure out where in the allocation lifecycle to intercept.
 
@@ -244,8 +244,10 @@ CUDA SHIM WRAPPER:
 
 
 ---
-For full per-tool implementation instructions on llama.cpp / ik_llama.cpp check
+For full implementation instructions on tools that require manual model loading — llama.cpp, ik_llama.cpp, and others check
 **[implementing_further_into_tools.md](implementing_further_into_tools.md)**.
+
+Ollama does not need this; GreenBoost integrates with it automatically via the CUDA shim and LD_PRELOAD.
 
 ---
 
@@ -288,6 +290,6 @@ or different inference engines beyond Ollama and ExLlamaV3.
 
 ## Non direct Contributors
 
-**v2.4** — UVM path improvements inspired by [HAMi-core](https://github.com/Project-HAMi/HAMi-core),
+UVM path improvements inspired by [HAMi-core](https://github.com/Project-HAMi/HAMi-core),
 a Kubernetes GPU virtualization project that virtualizes VRAM for containers.
 GreenBoost borrowed the `cuMemAdvise` prefetch pattern for its UVM fallback.
