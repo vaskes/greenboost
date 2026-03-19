@@ -159,20 +159,17 @@ what it is supposed to do.
 
 ## What this code is based on, and where it comes from
 
-I started coding at 12, in JavaScript. A few years later I was into Cisco networking,
-capturing TCP/IP packets, playing with Linux back when Ubuntu was just starting to get
-traction. That combination, network protocols, low-level system behaviour, Linux
-internals, stuck with me.
+I started coding at 12y old, got a JavaScript book from a local store. A few years later I was into Cisco networking basics,
+capturing TCP/IP packets, playing with Linux back when Ubuntu was just starting to get traction.
 
 More recently I had been modifying VMware kernel modules to get them running on newer
 Linux kernels. That gave me a working understanding of how kernel modules are structured,
-how they interact with the rest of the system, and how much you can change about how a
-piece of software behaves without the software itself knowing.
+how they interact with the rest of the system.
 
-On the ML side: I took neural network and machine learning courses, trained a couple of
+No that long ago I took neural network and machine learning lessons, trained a couple of
 recognition models, and got far enough into the TensorFlow Developer certification path
-that I was essentially ready to sit the exam. I got into a relationship, limited time, 
-and I ended up stopping missing the certification exam. That one still stings a bit.
+that I was essentially ready to sit the exam. I got into a relationship, live changed, less control of the time, 
+and I ended up missing the certification exam. That one still stings a bit.
 
 I use AI inference every day at work. Watching tokens burn through cloud APIs, knowing
 I had a GPU doing nothing useful, it eventually clicked. The question I started asking was simple: 
