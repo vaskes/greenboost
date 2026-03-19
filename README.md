@@ -103,29 +103,6 @@ figure out where in the allocation lifecycle to intercept.
 
 ---
 
-## Bundled inference libraries
-
-To get the most out of the extended memory, GreenBoost bundles several open-source
-libraries and integrates them through a unified `optimize-model` command:
-
-- **ExLlamaV3** — high-performance inference engine with a native GreenBoost KV cache
-  layer. KV tensors are allocated directly from `/dev/greenboost` as zero-copy
-  mmap → numpy → PyTorch tensors. No CUDA shim involved for cache I/O.
-
-- **kvpress** — runtime KV cache compression (ExpAttn, SnapKV, KnormPress). Applies at
-  inference time, no retraining needed. Reduces DDR4 pressure significantly at long context.
-
-- **NVIDIA ModelOpt** — post-training quantization (FP8, INT4-AWQ, NVFP4). No retraining,
-  only a calibration pass (~512 samples). Cuts the 32 GB model to ~16 GB (FP8) or ~8 GB
-  (INT4-AWQ), which changes everything for memory tier usage.
-
-- **TensorRT-Edge-LLM** — TRT engine export for desktop RTX GPUs.
-
-- **Unsloth + LoRA** — parameter-efficient fine-tuning that fits a 30B model into 12 GB
-  VRAM via 4-bit base quantization and rank-16 adapters. Needs your own training data.
-
----
-
 ## Installation
 
 ```bash
@@ -161,86 +138,9 @@ The installer runs the following steps automatically:
 # Run Ollama as normal — GreenBoost is transparent
 ollama run glm-4.7-flash:q8_0
 
-# ExLlamaV3 with GreenBoost DDR4 KV cache offload:
-./tools/greenboost-exllama.sh --model /opt/models/glm-4.7-flash-exl3
-
-# Convert a HuggingFace model to EXL3 format (4bpw → ~16 GB):
-./tools/convert_to_exl3.sh --model THUDM/glm-4.7-flash-hf --bpw 4.0
-
-# FP8 quantization (32 GB → ~16 GB, no retraining):
-python tools/greenboost-ptq.py --model THUDM/glm-4.7-flash-hf --quant fp8
-
-# Runtime KV cache compression benchmark:
-./tools/greenboost-kvpress.sh --model THUDM/glm-4.7-flash-hf --benchmark
-
 # Monitor memory tiers live:
 watch -n1 'cat /sys/class/greenboost/greenboost/pool_info'
 ```
-
----
-
-## Using GreenBoost with inference tools
-
-The CUDA shim uses a two-stage activation approach that is safe system-wide:
-
-- **Stage 1 (automatic):** At load time the shim silently probes whether `libcuda.so.1`
-  is already resident in the process (`RTLD_NOLOAD` — zero side-effects). Apps that link
-  CUDA statically (llama.cpp, TensorRT-LLM) activate the shim automatically. Processes
-  without CUDA (GDM, shells, systemd helpers) are completely unaffected.
-- **Stage 2 (explicit opt-in):** Apps that load CUDA lazily via `dlopen` at runtime
-  (Ollama, vLLM, PyTorch) need `GREENBOOST_ACTIVE=1` set in their environment so the
-  shim loads `libcuda.so.1` proactively before the app does.
-
-| Method | When to use |
-|--------|-------------|
-| `/etc/ld.so.preload` (configured by installer) | All processes — Stage 1 auto-detects CUDA, safe for GDM and system services |
-| `greenboost-run <cmd>` | CLI tools that load CUDA lazily — sets `GREENBOOST_ACTIVE=1` automatically |
-| `Environment="GREENBOOST_ACTIVE=1"` + `LD_PRELOAD` in `[Service]` | systemd services (Ollama, llama-server — configured automatically by the installer) |
-
-**Quick examples:**
-
-```bash
-# Ollama — configured automatically by full-install (restart service after install)
-sudo systemctl restart ollama
-ollama run glm-4.7-flash:q8_0
-
-# llama.cpp / ik_llama.cpp (static CUDA link — activates automatically via ld.so.preload)
-./build/bin/llama-cli -m model.gguf --n-gpu-layers 999 --ctx-size 131072
-
-# vLLM
-greenboost-run python -m vllm.entrypoints.openai.api_server \
-  --model /path/to/model --gpu-memory-utilization 0.95
-
-# LM Studio, Jan.ai, ComfyUI, SD WebUI, koboldcpp
-greenboost-run /path/to/app
-
-# HuggingFace Transformers
-greenboost-run python your_script.py
-```
-
-For full per-tool instructions, GPU layer flags, ExLlamaV2/V3 specifics, and the
-complete list of environment variables see
-**[implementing_further_into_tools.md](implementing_further_into_tools.md)**.
-
----
-
-## Observed performance (glm-4.7-flash:q8_0, RTX 5070)
-
-| Setup | Decode tok/s | TTFT |
-|-------|-------------|------|
-| Ollama + GreenBoost shim (UVM path) | 3–8 | 4–12s |
-| + kvpress 50% KV compression | 4–8 | 3–10s |
-| ExLlamaV3 + GreenBoost cache | 8–20 | 2–8s |
-| ModelOpt FP8 (16 GB model) | 10–25 | 1–5s |
-| ExLlamaV3 EXL3 2bpw (8 GB, full VRAM) | 25–60 | 0.5–2s |
-
-The UVM overflow path benefits from `cuMemAdvise` prefetch hints applied at allocation
-time — these switch the UVM driver from on-demand page-fault mode to direct PTE mapping,
-eliminating 5–50 µs per-access fault latency and yielding ~50% throughput improvement on
-the PCIe overflow path. Even so, the PCIe 4.0 link (~32 GB/s) remains the hard bottleneck
-when the model overflows VRAM. The best strategy is to shrink the model until it fits —
-either with EXL3 quantization or ModelOpt PTQ — and use GreenBoost's DDR4 pool for KV
-cache only.
 
 ---
 
@@ -333,6 +233,20 @@ COMMANDS:
 ```
 
 ** Greenboost_setup.sh had been adapted to detect if installation happens under RedHat based system and execute Alan's script. 
+
+
+---
+For full per-tool implementation instructions on llama.cpp / ik_llama.cpp check
+**[implementing_further_into_tools.md](implementing_further_into_tools.md)**.
+
+---
+
+## Model optimization tools
+
+As a next phase of the project, the [`tools/`](tools/) directory bundles several
+open-source libraries that can help tune models further — quantization, KV cache
+compression, fine-tuning, and alternative inference engines. See
+**[tools/README.md](tools/README.md)** for details.
 
 ---
 

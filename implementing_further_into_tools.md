@@ -1,7 +1,5 @@
 # GreenBoost — llama.cpp / ik_llama.cpp integration
 
-**Author:** Ferran Duarri
-
 llama.cpp and ik_llama.cpp resolve GPU functions via `dlopen`+`dlsym` at runtime,
 which bypasses `LD_PRELOAD` hooks on the symbols directly. GreenBoost intercepts
 `dlsym` itself so the virtual VRAM size and allocation hooks stay active.
@@ -86,12 +84,3 @@ cat /sys/class/greenboost/greenboost/pool_info
 ```
 
 ---
-
-## License
-
-**GPL v2** — mandatory attribution to Ferran Duarri in all forks and derivatives.
-
-```
-Copyright (C) 2024-2026 Ferran Duarri
-SPDX-License-Identifier: GPL-2.0-only
-```
