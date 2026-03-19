@@ -102,7 +102,7 @@ check_update() {
 # Populates GB_PHYS, GB_VIRT, GB_RESERVE, GB_NVME_SWAP, GB_NVME_POOL,
 # GB_PCORES_MAX, GB_GOLDEN_MIN, GB_GOLDEN_MAX, GB_PCORES_ONLY,
 # RAM_TYPE, RAM_SPEED_MT, GPU_NAME, CPU_NAME, NVME_SIZE_GB,
-# PCIE_GEN, PCIE_WIDTH, PCIE_BW_GBS.
+# PCIE_GEN, PCIE_WIDTH, PCIE_BW_GBS, PCIE_MAX_GEN, PCIE_MAX_BW_GBS.
 # Safe to call multiple times — idempotent.
 
 detect_hardware() {
@@ -152,27 +152,51 @@ detect_hardware() {
     [[ -z "$RAM_SPEED_MT" || "$RAM_SPEED_MT" == "Unknown" ]] && RAM_SPEED_MT="?"
 
     # ── PCIe link (GPU slot) ──────────────────────────────────────────────
+    # current_link_speed is unreliable — PCIe ASPM downclock to Gen 1 when the
+    # GPU is in idle/P8 power state.  Use the parent bridge max_link_speed for
+    # the slot capability, and the GPU sysfs max_link_speed for GPU hardware max.
     PCIE_GEN=0; PCIE_WIDTH="x?"; PCIE_BW_GBS=0
+    PCIE_MAX_GEN=0; PCIE_MAX_BW_GBS=0
     local gpu_pci
     gpu_pci=$(ls /proc/driver/nvidia/gpus/ 2>/dev/null | head -1)
-    if [[ -n "$gpu_pci" ]] && command -v lspci &>/dev/null; then
-        local lnksta
-        lnksta=$(lspci -s "$gpu_pci" -v 2>/dev/null | grep -i "LnkSta:")
-        local speed_gts lanes
-        speed_gts=$(echo "$lnksta" | grep -oP 'Speed \K[0-9]+(?=GT/s)' | head -1)
-        lanes=$(echo "$lnksta"    | grep -oP 'Width x\K[0-9]+'           | head -1)
-        if [[ -n "$speed_gts" && $speed_gts -gt 0 ]]; then
-            if   [[ $speed_gts -ge 64 ]]; then PCIE_GEN=6
-            elif [[ $speed_gts -ge 32 ]]; then PCIE_GEN=5
-            elif [[ $speed_gts -ge 16 ]]; then PCIE_GEN=4
-            elif [[ $speed_gts -ge 8  ]]; then PCIE_GEN=3
-            elif [[ $speed_gts -ge 5  ]]; then PCIE_GEN=2
-            else                               PCIE_GEN=1; fi
-            PCIE_WIDTH="x${lanes:-?}"
-            # Bandwidth: GT/s × lanes × 128/130 / 8  (128b/130b encoding, Gen3+)
-            if [[ -n "$lanes" && $lanes -gt 0 ]]; then
-                PCIE_BW_GBS=$(( speed_gts * lanes * 128 / 130 / 8 ))
-            fi
+    if [[ -n "$gpu_pci" ]]; then
+        local gpu_sysfs parent_sysfs
+        gpu_sysfs=$(readlink -f "/sys/bus/pci/devices/$gpu_pci")
+        parent_sysfs=$(readlink -f "$gpu_sysfs/..")
+
+        # helper: map GT/s speed string ("16.0 GT/s PCIe") → PCIe gen number
+        _gts_to_gen() {
+            local gts; gts=$(echo "$1" | grep -oP '^[0-9]+')
+            if   [[ $gts -ge 64 ]]; then echo 6
+            elif [[ $gts -ge 32 ]]; then echo 5
+            elif [[ $gts -ge 16 ]]; then echo 4
+            elif [[ $gts -ge 8  ]]; then echo 3
+            elif [[ $gts -ge 5  ]]; then echo 2
+            elif [[ $gts -ge 1  ]]; then echo 1
+            else echo 0; fi
+        }
+        # helper: x16 bandwidth in GB/s (128b/130b encoding, Gen3+)
+        _pcie_bw() { echo $(( $1 * $2 * 128 / 130 / 8 )); }
+
+        # Slot capability: parent bridge max_link_speed + max_link_width
+        local slot_spd slot_w
+        slot_spd=$(cat "$parent_sysfs/max_link_speed" 2>/dev/null)
+        slot_w=$(  cat "$parent_sysfs/max_link_width"  2>/dev/null)
+        if [[ -n "$slot_spd" ]]; then
+            PCIE_GEN=$(_gts_to_gen "$slot_spd")
+            PCIE_WIDTH="x${slot_w:-?}"
+            [[ -n "$slot_w" && $slot_w -gt 0 ]] && \
+                PCIE_BW_GBS=$(_pcie_bw "$(echo "$slot_spd" | grep -oP '^[0-9]+')" "$slot_w")
+        fi
+
+        # GPU hardware max: GPU device max_link_speed
+        local gpu_max_spd gpu_max_w
+        gpu_max_spd=$(cat "$gpu_sysfs/max_link_speed" 2>/dev/null)
+        gpu_max_w=$(  cat "$gpu_sysfs/max_link_width"  2>/dev/null)
+        if [[ -n "$gpu_max_spd" ]]; then
+            PCIE_MAX_GEN=$(_gts_to_gen "$gpu_max_spd")
+            [[ -n "$gpu_max_w" && $gpu_max_w -gt 0 ]] && \
+                PCIE_MAX_BW_GBS=$(_pcie_bw "$(echo "$gpu_max_spd" | grep -oP '^[0-9]+')" "$gpu_max_w")
         fi
     fi
 
@@ -274,9 +298,15 @@ detect_hardware() {
 }
 
 print_detected_hardware() {
-    local pcie_info="Gen ${PCIE_GEN} ${PCIE_WIDTH}"
-    [[ $PCIE_BW_GBS -gt 0 ]] && pcie_info+="  (~${PCIE_BW_GBS} GB/s)"
-    [[ $PCIE_GEN -eq 0 ]]    && pcie_info="unknown (lspci not available or GPU not found)"
+    local pcie_info
+    if [[ $PCIE_GEN -eq 0 ]]; then
+        pcie_info="unknown (GPU PCI address not found)"
+    else
+        pcie_info="Gen ${PCIE_GEN} ${PCIE_WIDTH}  (~${PCIE_BW_GBS} GB/s)"
+        if [[ $PCIE_MAX_GEN -gt $PCIE_GEN ]]; then
+            pcie_info+="  |  GPU max: Gen ${PCIE_MAX_GEN} x${PCIE_WIDTH#x}  (~${PCIE_MAX_BW_GBS} GB/s if slot supports it)"
+        fi
+    fi
     info "Detected hardware:"
     info "  GPU   : ${GPU_NAME}  (${GB_PHYS} GB VRAM)"
     info "  PCIe  : ${pcie_info}"
@@ -298,6 +328,8 @@ set_owner_workstation_params() {
     PCIE_GEN=4
     PCIE_WIDTH="x16"
     PCIE_BW_GBS=32
+    PCIE_MAX_GEN=5
+    PCIE_MAX_BW_GBS=63
     NVME_SIZE_GB=4000
     GB_PHYS=12
     GB_VIRT=51
