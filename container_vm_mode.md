@@ -1,8 +1,7 @@
 # GreenBoost v2.5 — Blended Shim: Three-Path Overflow Architecture
 
-**Author:** Ferran Duarri
-**Contributor (Path B origin):** Jerry Nguyen (GitLab MR !3)
-
+**Author:** Jerry Nguyen (GitLab MR !3)
+**Contributor:** Ferran
 ---
 
 ## Overview
