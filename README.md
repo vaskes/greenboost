@@ -19,7 +19,7 @@ exceed your GPU memory without modifying the inference software at all.
 
 **GreenBoost does not replace or modify the official NVIDIA kernel drivers** (`nvidia.ko`,
 `nvidia-uvm.ko`). It loads as a completely independent kernel module alongside them and works
-at the CUDA allocation layer, not the driver layer.
+at the CUDA allocation layer.
 
 ---
 
