@@ -1,23 +1,33 @@
 /*
- * GreenBoost v2.4 — CUDA LD_PRELOAD memory shim
+ * GreenBoost v2.5 — CUDA LD_PRELOAD memory shim
  *
- * Intercepts CUDA memory allocations and routes large allocations to
- * GreenBoost system RAM via DMA-BUF + cudaImportExternalMemory (primary path)
- * or cuMemAllocManaged UVM (fallback).  Exposes combined physical VRAM +
- * system RAM pool to CUDA applications without code changes (hardware-detected).
+ * Routes CUDA VRAM overflow to system RAM via three paths (tried in order):
+ *
+ *   Path A — DMA-BUF + greenboost.ko (bare metal, default)
+ *             mmap → GB_IOCTL_PIN_USER_PTR → cuMemHostRegister(DEVICEMAP)
+ *             Best bandwidth; requires greenboost.ko and /dev/greenboost.
+ *
+ *   Path B — HostReg no-kernel (containers / VMs, auto-fallback)
+ *             mmap (2 MB huge preferred) → cuMemHostRegister(DEVICEMAP)
+ *             No kernel module required.  Works in Docker, LXC, KVM, WSL2.
+ *             Set GREENBOOST_NO_HOSTREG=1 to skip.
+ *             Concept: Jerry Nguyen (MR !3); hugepage + integration: Ferran Duarri.
+ *
+ *   Path C — cuMemAllocManaged UVM (last resort)
+ *             cuMemAllocManaged + cuMemAdvise prefetch hints (~50% throughput gain).
  *
  * USAGE:
  *   LD_PRELOAD=/usr/local/lib/libgreenboost_cuda.so  ./your_cuda_app
  *
  * ENVIRONMENT VARIABLES:
- *   GREENBOOST_USE_DMA_BUF       1 = use DMA-BUF import (default), 0 = UVM only
+ *   GREENBOOST_USE_DMA_BUF       1 = attempt Path A (default), 0 = skip to B/C
+ *   GREENBOOST_NO_HOSTREG        1 = skip Path B (go straight to UVM/Path C)
  *   GREENBOOST_VRAM_HEADROOM_MB  keep ≥ this many MB free in VRAM (default 2048)
  *   GREENBOOST_CUDART_PATH       explicit path to libcudart.so (override auto-search)
  *   GREENBOOST_DEBUG             1 = verbose logging to stderr
  *
- * PREREQUISITES:
- *   greenboost.ko loaded:   sudo insmod greenboost.ko
- *   nvidia_uvm.ko loaded:   sudo modprobe nvidia_uvm
+ * PREREQUISITES (Path A): greenboost.ko loaded, nvidia_uvm.ko loaded
+ * PREREQUISITES (Path B/C): nvidia_uvm.ko loaded; no custom kernel module needed
  *
  * Author  : Ferran Duarri
  * License : GPL v2
@@ -364,6 +374,10 @@ static size_t gb_virtual_vram_bytes  = 51ULL * 1024 * 1024 * 1024; /* system RAM
 static size_t gb_physical_vram_bytes = 0; /* real GPU VRAM — probed at init via NVML; 0 = unknown */
 /* DMA-BUF mmap+register is the primary path now. */
 static int    gb_use_dmabuf         = 1;
+/* Path B: cuMemHostRegister without greenboost.ko (containers/VMs).
+ * Auto-enabled when /dev/greenboost is unavailable.
+ * Set GREENBOOST_NO_HOSTREG=1 to skip Path B and go straight to UVM. */
+static int    gb_no_hostreg         = 0;
 static int    initialized           = 0;
 
 /* /dev/greenboost fd — opened lazily on first DMA-BUF allocation */
@@ -479,6 +493,9 @@ static void gb_shim_init(void)
 
     env = getenv("GREENBOOST_DEBUG");
     if (env && env[0] == '1') gb_debug = 1;
+
+    env = getenv("GREENBOOST_NO_HOSTREG");
+    if (env && env[0] == '1') gb_no_hostreg = 1;
 
     forced = (getenv("GREENBOOST_ACTIVE") != NULL);
 
@@ -652,14 +669,21 @@ static void gb_shim_init(void)
      * libcuda.so.1 is in ldconfig (NVIDIA driver installs it), so the shim
      * activates for ls, bash, systemd, etc.  Silent by default. */
     if (gb_debug) {
-        fprintf(stderr, "[GreenBoost] v2.4 loaded — vram_headroom=%zuMB virtual_vram=%zuMB use_dmabuf=%d debug=%d\n",
+        fprintf(stderr, "[GreenBoost] v2.5 loaded — vram_headroom=%zuMB virtual_vram=%zuMB use_dmabuf=%d debug=%d\n",
                 vram_headroom_bytes >> 20, gb_virtual_vram_bytes >> 20, gb_use_dmabuf, gb_debug);
-        fprintf(stderr, "[GreenBoost] UVM overflow      : %s (primary system RAM path)\n",
-                real_cuMemAllocManaged ? "available" : "UNAVAILABLE — load nvidia_uvm.ko");
-        fprintf(stderr, "[GreenBoost] DMA-BUF import   : %s\n",
-                (real_cuMemHostRegister && gb_use_dmabuf) ? "enabled (mmap+register path)"
+        fprintf(stderr, "[GreenBoost] Path A (DMA-BUF+kernel) : %s\n",
+                (real_cuMemHostRegister && gb_use_dmabuf)
+                    ? "enabled — mmap+GB_IOCTL_PIN_USER_PTR+HostReg (best bandwidth)"
                 : gb_use_dmabuf ? "wanted but cuMemHostRegister missing"
-                : "disabled (set GREENBOOST_USE_DMA_BUF=1 to enable)");
+                : "disabled (GREENBOOST_USE_DMA_BUF=0)");
+        fprintf(stderr, "[GreenBoost] Path B (HostReg/no-kmod): %s\n",
+                (!gb_no_hostreg && real_cuMemHostRegister && real_cuMemHostGetDevicePointer)
+                    ? "available — mmap+cuMemHostRegister (containers/VMs)"
+                : gb_no_hostreg ? "disabled (GREENBOOST_NO_HOSTREG=1)"
+                : "unavailable (cuMemHostRegister not resolved)");
+        fprintf(stderr, "[GreenBoost] Path C (UVM/managed)    : %s\n",
+                real_cuMemAllocManaged ? "available — cuMemAllocManaged+cuMemAdvise (last resort)"
+                                       : "UNAVAILABLE — load nvidia_uvm.ko");
         fprintf(stderr, "[GreenBoost] Async alloc hooks : cuMemAllocAsync=%s cudaMallocAsync=%s\n",
                 real_cuMemAllocAsync ? "hooked" : "missing",
                 real_cudaMallocAsync ? "hooked" : "missing");
@@ -781,8 +805,42 @@ static CUresult gb_overflow_alloc(CUdeviceptr *dptr, size_t bytesize)
         }
     }
 
-    /* ---- Path 2: UVM (cuMemAllocManaged) -------------------------------- */
-    /* Fallback path. Backed by system RAM; GPU accesses via page migration. */
+    /* ---- Path B: HostReg no-kernel (containers / VMs) ------------------- */
+    /* mmap anonymous pages (2 MB huge preferred, 4 K fallback) and register  */
+    /* directly with the CUDA driver.  No greenboost.ko required — works       */
+    /* inside Docker, LXC, KVM guests, WSL2, and shared HPC clusters.          */
+    /* Concept by Jerry Nguyen (MR !3); hugepage preference + hash-table        */
+    /* integration by Ferran Duarri.                                            */
+    if (real_cuMemHostRegister && real_cuMemHostGetDevicePointer && !gb_no_hostreg) {
+        void *hreg_ptr = NULL;
+#ifdef MAP_HUGETLB
+        hreg_ptr = mmap(NULL, bytesize, PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB, -1, 0);
+        if (hreg_ptr == MAP_FAILED) hreg_ptr = NULL;
+#endif
+        if (!hreg_ptr)
+            hreg_ptr = mmap(NULL, bytesize, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (hreg_ptr && hreg_ptr != MAP_FAILED) {
+            ret = real_cuMemHostRegister(hreg_ptr, bytesize, CU_MEMHOSTREGISTER_DEVICEMAP);
+            if (ret == CUDA_SUCCESS) {
+                ret = real_cuMemHostGetDevicePointer(dptr, hreg_ptr, 0);
+                if (ret == CUDA_SUCCESS) {
+                    /* fd=-1: no DMA-BUF fd to close on free */
+                    ht_insert(*dptr, bytesize, 0 /* not UVM */, -1, hreg_ptr, -1);
+                    gb_log("HostReg alloc (no kernel module): %zu MB at cuda_ptr=0x%llx (mapped=%p)",
+                           bytesize >> 20, (unsigned long long)*dptr, hreg_ptr);
+                    return CUDA_SUCCESS;
+                }
+                if (real_cuMemHostUnregister) real_cuMemHostUnregister(hreg_ptr);
+            }
+            munmap(hreg_ptr, bytesize);
+        }
+        gb_log("Path B (HostReg) failed for %zu MB — falling through to UVM", bytesize >> 20);
+    }
+
+    /* ---- Path C: UVM (cuMemAllocManaged) -------------------------------- */
+    /* Last-resort fallback. Backed by system RAM via UVM page migration.     */
     if (real_cuMemAllocManaged) {
         ret = real_cuMemAllocManaged(dptr, bytesize, CU_MEM_ATTACH_GLOBAL);
         if (ret == CUDA_SUCCESS) {

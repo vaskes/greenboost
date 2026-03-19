@@ -256,12 +256,47 @@ cache only.
 
 ---
 
+## Using GreenBoost inside containers, VMs, and WSL2
+
+The CUDA shim supports a **kernel-module-free overflow path** (Path B) for
+environments where `greenboost.ko` cannot be loaded — Docker, LXC, KVM guests,
+WSL2, and shared HPC clusters.  When `/dev/greenboost` is unavailable the shim
+automatically falls back to `cuMemHostRegister(DEVICEMAP)`, which pins anonymous
+system RAM pages directly through the CUDA driver with no custom kernel module
+required.
+
+```bash
+# Docker example
+docker run --gpus all \
+  -e GREENBOOST_ACTIVE=1 \
+  -e LD_PRELOAD=/usr/local/lib/libgreenboost_cuda.so \
+  -v /usr/local/lib/libgreenboost_cuda.so:/usr/local/lib/libgreenboost_cuda.so \
+  my-llm-image python run_model.py
+
+# Force Path B only (skip kernel-module path entirely):
+GREENBOOST_USE_DMA_BUF=0 greenboost-run python your_script.py
+
+# Skip Path B, go straight to UVM:
+GREENBOOST_NO_HOSTREG=1 greenboost-run python your_script.py
+```
+
+The three overflow paths and when each is used:
+
+| Path | Method | Requires kernel module | Best for |
+|------|--------|----------------------|----------|
+| A | DMA-BUF + `greenboost.ko` | Yes | Bare-metal Linux (default) |
+| B | `cuMemHostRegister` no-kmod | No | Docker / LXC / KVM / WSL2 |
+| C | `cuMemAllocManaged` UVM | No | Last resort / universal fallback |
+
+For a full explanation of path selection, bandwidth trade-offs, and per-environment
+instructions see **[container_vm_mode.md](container_vm_mode.md)**.
+
+---
+
 ## Known limitations
 
 - Tested on kernel 6.19 (Ubuntu 26.04). Earlier kernels may lack some exported symbols
   the module relies on.
-- The dlsym hook is specific to how Ollama resolves CUDA symbols. Other inference engines
-  (llama.cpp, vllm) may need different handling — contributions welcome.
 - T3 NVMe tier is slow for random access. If a workload thrashes T3, performance degrades
   significantly. This is a fundamental NVMe latency constraint, not a software issue.
 - Blackwell (compute capability 12.0) is the primary tested GPU. Ada Lovelace and Ampere
@@ -323,8 +358,12 @@ or different inference engines beyond Ollama and ExLlamaV3.
 - **Alan Sill** ([@alansill](https://gitlab.com/alansill)) — contributed `greenboost_setup_rocky.sh`,
   a setup script for Red Hat-based systems (Rocky Linux, AlmaLinux, RHEL).
 
+- **Jerry Nguyen** ([@jerry.nguyen](https://gitlab.com/jerry.nguyen)) — contributed the
+  kernel-module-free overflow path (MR !3): `cuMemHostRegister(DEVICEMAP)` approach that
+  enables GreenBoost VRAM extension inside containers, VMs, WSL2, and HPC clusters without
+  requiring `greenboost.ko`.  Integrated as Path B of the blended shim in v2.5.
+
 
 ## Non direct Contributors
-v2.4 include those changes;
-   
-CUDA shim safety fix: https://github.com/Project-HAMi/HAMi-core 
+v2.5 includes those changes:
+CUDA shim safety fix: https://github.com/Project-HAMi/HAMi-core

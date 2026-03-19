@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * GreenBoost v2.4 — 3-Tier GPU Memory Pool via DMA-BUF + CUDA UVM
+ * GreenBoost v2.5 — 3-Tier GPU Memory Pool via DMA-BUF + CUDA UVM
  *
  * Tier 1 — RTX 5070 GDDR7 12 GB        ~336 GB/s  (192-bit @ 14 Gbps)
  * Tier 2 — DDR4-3600 dual-ch 51 GB     ~57.6 GB/s local / ~32 GB/s via PCIe 4.0 x16
@@ -58,7 +58,7 @@ MODULE_IMPORT_NS("DMA_BUF");
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Ferran Duarri");
-MODULE_DESCRIPTION("GreenBoost v2.4 — 3-tier pool: NVidia RTX GPU VRAM + System DDR RAM + NVMe swap");
+MODULE_DESCRIPTION("GreenBoost v2.5 — 3-tier pool: NVidia RTX GPU VRAM + System DDR RAM + NVMe swap");
 MODULE_VERSION("2.3.0");
 
 /* 2 MiB hugepage constants */
@@ -166,7 +166,7 @@ struct gb_buf {
 	int              id;          /* IDR id (0 = not yet registered) */
 	int              tier;        /* GB_TIER2_DDR4 or GB_TIER3_NVME  */
 	struct dma_buf  *dmabuf;
-	/* LRU and lifecycle fields (v2.4) */
+	/* LRU and lifecycle fields (v2.5) */
 	struct list_head  lru_node;     /* link in gb_device.lru_list    */
 	unsigned long     alloc_jiffies;/* jiffies at alloc time         */
 	unsigned long     last_jiffies; /* jiffies of last madvise HOT   */
@@ -197,7 +197,7 @@ struct gb_device {
 	atomic_t         swap_pressure;   /* 0=ok 1=warn 2=critical         */
 
 	struct task_struct *watchdog;
-	/* LRU tracking (v2.4) */
+	/* LRU tracking (v2.5) */
 	struct list_head    lru_list;     /* T2 buffers in LRU order       */
 	spinlock_t          lru_lock;     /* protects lru_list             */
 	struct eventfd_ctx *pressure_efd; /* signaled on pressure change   */
@@ -930,7 +930,7 @@ static ssize_t pool_info_show(struct device *dev,
 		                                                  "ok";
 
 	return sysfs_emit(buf,
-		"=== GreenBoost v2.4 — 3-Tier Pool Info ===\n"
+		"=== GreenBoost v2.5 — 3-Tier Pool Info ===\n"
 		"\n"
 		"Tier 1  GPU VRAM           : %4d GB   [hot layers]\n"
 		"Tier 2  System RAM pool    : %4d GB   ~32 GB/s PCIe DMA  [cold layers]\n"
@@ -990,7 +990,7 @@ static ssize_t hw_info_show(struct device *dev,
 	ram_total_mb = ((u64)si.totalram * si.mem_unit) >> 20;
 
 	return sysfs_emit(buf,
-		"=== GreenBoost v2.4 — Hardware Topology ===\n"
+		"=== GreenBoost v2.5 — Hardware Topology ===\n"
 		"\n"
 		"CPU  %s\n"
 		"  Logical CPUs      : %d total\n"
@@ -1146,7 +1146,7 @@ static int __init gb_init(void)
 	int ret;
 
 	pr_info(DRIVER_NAME ": =====================================================\n");
-	pr_info(DRIVER_NAME ": GreenBoost v2.4 — 3-Tier GPU Memory Pool (LRU+eventfd)\n");
+	pr_info(DRIVER_NAME ": GreenBoost v2.5 — 3-Tier GPU Memory Pool (LRU+eventfd)\n");
 	pr_info(DRIVER_NAME ": Author  : Ferran Duarri\n");
 	pr_info(DRIVER_NAME ": CPU     : %s — P-cores CPU 0-%d (golden %d-%d)\n",
 		boot_cpu_data.x86_model_id, pcores_max_cpu, golden_cpu_min, golden_cpu_max);
@@ -1262,7 +1262,7 @@ err_chrdev:
 
 static void __exit gb_exit(void)
 {
-	pr_info(DRIVER_NAME ": unloading GreenBoost v2.4\n");
+	pr_info(DRIVER_NAME ": unloading GreenBoost v2.5\n");
 
 	if (gb_dev.pressure_efd) {
 		eventfd_ctx_put(gb_dev.pressure_efd);

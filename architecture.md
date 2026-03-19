@@ -47,7 +47,7 @@ hardware (12+51 GB pool, largest model nemotron-3-super:120b ≈ 87 GB, 256K con
                               │  LD_PRELOAD intercept
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│              libgreenboost_cuda.so  (CUDA shim v2.4)               │
+│              libgreenboost_cuda.so  (CUDA shim v2.5)               │
 │  • Intercepts: cudaMalloc, cudaMallocAsync, cuMemAllocAsync,       │
 │                cudaFree, cuMemFree, dlsym                           │
 │  • Hooks: cuDeviceTotalMem_v2, nvmlDeviceGetMemoryInfo             │
@@ -60,7 +60,7 @@ hardware (12+51 GB pool, largest model nemotron-3-super:120b ≈ 87 GB, 256K con
                               │  GB_IOCTL_ALLOC / GB_IOCTL_FREE
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│              /dev/greenboost  (greenboost.ko v2.4)                  │
+│              /dev/greenboost  (greenboost.ko v2.5)                  │
 │  • Char device, IOCTL interface                                     │
 │  • GB_IOCTL_ALLOC    — allocate pinned DDR4 pages, return DMA-BUF │
 │  • GB_IOCTL_GET_INFO — pool statistics                             │

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GreenBoost v2.4 — Setup & installation script
+# GreenBoost v2.5 — Setup & installation script
 # Author: Ferran Duarri
 # Hardware: ASRock B760M-ITX/D4 | i9-14900KF | RTX 5070 OC | 64 GB DDR4-3600 | Samsung 990 EVO Plus 4 TB
 #
@@ -14,7 +14,7 @@
 #   sudo ./greenboost_setup.sh uninstall        — remove module + all config
 #   sudo ./greenboost_setup.sh load             — insmod with default params
 #   sudo ./greenboost_setup.sh unload           — rmmod
-#   sudo ./greenboost_setup.sh install-sys-configs    — install v2.4 system config files
+#   sudo ./greenboost_setup.sh install-sys-configs    — install v2.5 system config files
 #   sudo ./greenboost_setup.sh install-llama-configs  — transparent llama.cpp injection (ld.so.preload)
 #   sudo ./greenboost_setup.sh tune             — runtime tuning (governor, NVMe, sysctl)
 #   sudo ./greenboost_setup.sh tune-grub        — GRUB/boot parameter optimization
@@ -38,6 +38,9 @@ SHIM_LIB="libgreenboost_cuda.so"
 SHIM_DEST="/usr/local/lib"
 MODULE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+GB_VERSION="2.5"
+GB_REPO_API="https://gitlab.com/api/v4/projects/IsolatedOctopi%2Fnvidia_greenboost/repository/tags"
+
 # Colours
 RED='\033[0;31m'
 GRN='\033[0;32m'
@@ -48,6 +51,49 @@ NC='\033[0m'
 info()  { echo -e "${GRN}[GreenBoost]${NC} $*"; }
 warn()  { echo -e "${YLW}[GreenBoost] WARN:${NC} $*"; }
 die()   { echo -e "${RED}[GreenBoost] ERROR:${NC} $*" >&2; exit 1; }
+
+# ---- Update check -----------------------------------------------------
+# Queries the GitLab tags API; prints a warning if a newer tag exists.
+# Non-blocking: 5-second timeout; silently skips if network is unavailable.
+
+check_update() {
+    local raw latest
+
+    # Fetch the tag list — try curl first, then wget
+    if command -v curl &>/dev/null; then
+        raw=$(curl -fsSL --max-time 5 "$GB_REPO_API" 2>/dev/null)
+    elif command -v wget &>/dev/null; then
+        raw=$(wget -qO- --timeout=5 "$GB_REPO_API" 2>/dev/null)
+    else
+        return   # no HTTP client available — skip silently
+    fi
+
+    [[ -z "$raw" ]] && return   # network unavailable or empty response
+
+    # Extract the highest version tag (e.g. "v2.5" → "2.5")
+    # Tags are returned newest-first by the API; we sort anyway for safety.
+    latest=$(echo "$raw" \
+        | grep -oP '"name"\s*:\s*"v?\K[0-9]+\.[0-9]+(?:\.[0-9]+)?"' \
+        | tr -d '"' \
+        | sort -V \
+        | tail -1)
+
+    [[ -z "$latest" ]] && return   # no version tags found
+
+    # Compare: if latest > GB_VERSION, warn the user
+    local newer
+    newer=$(printf '%s\n%s\n' "$GB_VERSION" "$latest" | sort -V | tail -1)
+    if [[ "$newer" != "$GB_VERSION" ]]; then
+        warn "╔══════════════════════════════════════════════════════════════╗"
+        warn "║  A newer GreenBoost version is available: v${latest}               "
+        warn "║  You are installing:                       v${GB_VERSION}               "
+        warn "║  Download: https://gitlab.com/IsolatedOctopi/nvidia_greenboost"
+        warn "╚══════════════════════════════════════════════════════════════╝"
+        echo ""
+    else
+        info "Version check: v${GB_VERSION} is the latest release."
+    fi
+}
 
 # ---- Hardware detection -----------------------------------------------
 # Populates GB_PHYS, GB_VIRT, GB_RESERVE, GB_NVME_SWAP, GB_NVME_POOL,
@@ -254,7 +300,7 @@ cmd_install_sys_configs() {
     need_root install-sys-configs
     detect_hardware
 
-    info "Installing GreenBoost v2.4 system configuration files..."
+    info "Installing GreenBoost v2.5 system configuration files..."
 
     # 1. Ollama service — inject GreenBoost env vars + LD_PRELOAD (always refresh)
     local svc="/etc/systemd/system/ollama.service"
@@ -267,10 +313,10 @@ cmd_install_sys_configs() {
 /OLLAMA_KEEP_ALIVE/d
 /GREENBOOST_/d
 /libgreenboost/d' "$svc"
-        # Inject fresh v2.4 env vars
+        # Inject fresh v2.5 env vars
         sed -i "/^\[Service\]/a Environment=\"OLLAMA_FLASH_ATTENTION=1\"\nEnvironment=\"OLLAMA_KV_CACHE_TYPE=q8_0\"\nEnvironment=\"OLLAMA_NUM_CTX=${GB_OLLAMA_CTX}\"\nEnvironment=\"OLLAMA_MAX_LOADED_MODELS=1\"\nEnvironment=\"OLLAMA_KEEP_ALIVE=-1\"\nEnvironment=\"GREENBOOST_VRAM_HEADROOM_MB=2048\"\nEnvironment=\"GREENBOOST_DEBUG=0\"\nEnvironment=\"GREENBOOST_ACTIVE=1\"\nEnvironment=\"LD_PRELOAD=/usr/local/lib/libgreenboost_cuda.so\"" "$svc"
         systemctl daemon-reload
-        info "Ollama service: GreenBoost v2.4 env vars injected (refreshed)"
+        info "Ollama service: GreenBoost v2.5 env vars injected (refreshed)"
     else
         warn "Ollama service not found at $svc — skipping"
     fi
@@ -290,7 +336,7 @@ UDEVEOF
 
     # 2b. NVMe udev rule — scheduler=none, read_ahead=4096, nr_requests=2048
     cat > /etc/udev/rules.d/99-nvme-greenboost.rules << 'UDEVEOF'
-# GreenBoost v2.4 — NVMe tuning for T3 swap performance
+# GreenBoost v2.5 — NVMe tuning for T3 swap performance
 ACTION=="add|change", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/scheduler}="none"
 ACTION=="add|change", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/read_ahead_kb}="4096"
 ACTION=="add|change", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/nr_requests}="2048"
@@ -324,7 +370,7 @@ CPUEOF
     # which triggers the OOM guard and makes T2 unavailable.  Keep nr_hugepages=0.
     mkdir -p /etc/sysfs.d
     cat > /etc/sysfs.d/greenboost-hugepages.conf << 'HPEOF'
-# GreenBoost v2.4 — THP config (no HugeTLB pre-allocation: gb_alloc_buf uses buddy allocator)
+# GreenBoost v2.5 — THP config (no HugeTLB pre-allocation: gb_alloc_buf uses buddy allocator)
 kernel/mm/transparent_hugepage/enabled = always
 HPEOF
     info "THP sysfs conf: /etc/sysfs.d/greenboost-hugepages.conf"
@@ -340,7 +386,7 @@ HPEOF
 
     # 5. VM sysctl — reduce swap pressure, tune write-back
     cat > /etc/sysctl.d/99-greenboost.conf << 'SYSCTLEOF'
-# GreenBoost v2.4 — VM tuning for 3-tier model pool
+# GreenBoost v2.5 — VM tuning for 3-tier model pool
 vm.swappiness = 5
 vm.dirty_ratio = 20
 vm.dirty_background_ratio = 5
@@ -359,7 +405,7 @@ cmd_install_llama_configs() {
     local shim_path="$SHIM_DEST/$SHIM_LIB"
 
     # /etc/ld.so.preload — inject shim into all processes for zero-config transparency.
-    # Safe with shim v2.4+: the RTLD_NOLOAD guard in the constructor checks whether
+    # Safe with shim v2.5+: the RTLD_NOLOAD guard in the constructor checks whether
     # libcuda.so.1 is already resident before doing anything.  GDM, shells, and
     # systemd helpers take the "not a CUDA process" path and remain inert.
     # Apps that statically link libcuda (llama.cpp, llama-server) get automatic
@@ -536,7 +582,7 @@ do_purge() {
 }
 
 cmd_build() {
-    info "Building GreenBoost v2.4 (3-tier: VRAM + system RAM + NVMe)..."
+    info "Building GreenBoost v2.5 (3-tier: VRAM + system RAM + NVMe)..."
     make -C "$MODULE_DIR" all || die "Build failed — check output above"
     info "Build complete:"
     info "  Kernel module : $MODULE_DIR/greenboost.ko"
@@ -571,7 +617,7 @@ MODEOF
     # at runtime (vLLM, PyTorch scripts).  Static-CUDA apps (llama.cpp) get
     # injection automatically via ld.so.preload without needing this flag.
     cat > /etc/profile.d/greenboost.sh << PROFEOF
-# GreenBoost v2.4 — shell helpers
+# GreenBoost v2.5 — shell helpers
 export GREENBOOST_SHIM="$SHIM_DEST/$SHIM_LIB"
 # greenboost-run: for apps that load CUDA lazily (vLLM, PyTorch, etc.)
 # Static-CUDA apps (llama.cpp, llama-server) work automatically via ld.so.preload.
@@ -635,7 +681,7 @@ cmd_load() {
         pcores_only="$pcores_only" \
         || die "insmod failed — check: dmesg | tail -20"
 
-    info "GreenBoost v2.4 loaded — 3-tier pool active!"
+    info "GreenBoost v2.5 loaded — 3-tier pool active!"
     info ""
     info "  T1 ${GPU_NAME} : ${phys} GB  [hot layers]"
     info "  T2 ${RAM_TYPE} pool         : ${virt} GB  [cold layers]"
@@ -907,7 +953,7 @@ cmd_tune_sysctl() {
     echo ""
 
     # Write the header line with detected hardware (variables don't expand in 'HEREDOC')
-    printf '# GreenBoost v2.4 — Definitive sysctl config\n' > "$dest"
+    printf '# GreenBoost v2.5 — Definitive sysctl config\n' > "$dest"
     printf '# Hardware: %s | %s | %s-%s | %s GB NVMe\n' \
         "${CPU_NAME}" "${GPU_NAME}" "${RAM_TYPE}" "${RAM_SPEED_MT}" "${NVME_SIZE_GB}" >> "$dest"
     printf '# Loaded last (99-zzz) — wins all conflicts with earlier sysctl.d files.\n' >> "$dest"
@@ -1127,7 +1173,7 @@ cmd_tune_libs() {
 
 cmd_tune_all() {
     need_root tune-all
-    info "Running full system tuning for GreenBoost v2.4..."
+    info "Running full system tuning for GreenBoost v2.5..."
     echo ""
     cmd_tune
     echo ""
@@ -1143,7 +1189,7 @@ cmd_tune_all() {
 
 cmd_status() {
     echo ""
-    echo -e "${BLU}=== GreenBoost v2.4 Status (3-tier pool) ===${NC}"
+    echo -e "${BLU}=== GreenBoost v2.5 Status (3-tier pool) ===${NC}"
     echo ""
 
     if lsmod | grep -q "^${DRIVER_NAME} "; then
@@ -1167,7 +1213,7 @@ cmd_status() {
 cmd_help() {
     detect_hardware 2>/dev/null
     echo ""
-    echo -e "${BLU}GreenBoost v2.4 — 3-Tier GPU Memory Pool${NC}"
+    echo -e "${BLU}GreenBoost v2.5 — 3-Tier GPU Memory Pool${NC}"
     echo "Author : Ferran Duarri"
     echo "CPU    : ${CPU_NAME}"
     echo "GPU    : ${GPU_NAME}  (${GB_PHYS} GB VRAM)"
@@ -1230,11 +1276,11 @@ cmd_help() {
 }
 
 # ---- install-deps ------------------------------------------------------
-# Install all Ubuntu packages needed for GreenBoost v2.4 + ExLlamaV3
+# Install all Ubuntu packages needed for GreenBoost v2.5 + ExLlamaV3
 
 cmd_install_deps() {
     need_root install-deps
-    info "Installing Ubuntu dependencies for GreenBoost v2.4 + ExLlamaV3..."
+    info "Installing Ubuntu dependencies for GreenBoost v2.5 + ExLlamaV3..."
     info "Running apt-get update..."
     apt-get update -qq
 
@@ -1797,7 +1843,7 @@ cmd_diagnose() {
 
     # Log header
     {
-        echo "=== GreenBoost v2.4 Diagnose Log ==="
+        echo "=== GreenBoost v2.5 Diagnose Log ==="
         echo "timestamp=$(date '+%Y-%m-%d %H:%M:%S')"
         echo "kernel=$(uname -r)"
         echo "host=$(hostname)"
@@ -1807,7 +1853,7 @@ cmd_diagnose() {
 
     echo ""
     echo -e "${BLU}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLU}║  GreenBoost v2.4 — Full Diagnostic + Model Benchmark        ║${NC}"
+    echo -e "${BLU}║  GreenBoost v2.5 — Full Diagnostic + Model Benchmark        ║${NC}"
     echo -e "${BLU}╚══════════════════════════════════════════════════════════════╝${NC}"
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -1892,13 +1938,13 @@ cmd_diagnose() {
         elif echo "$shim_out" | grep -q "UVM overflow.*unavailable"; then
             _warn "Shim init: UVM overflow unavailable — load nvidia_uvm"
         fi
-        # Check dlsym hook present (v2.4+) — required to intercept dlopen+dlsym GPU API calls
+        # Check dlsym hook present (v2.5+) — required to intercept dlopen+dlsym GPU API calls
         if strings "$shim" 2>/dev/null | grep -q "dlsym hook"; then
             _chk "dlsym hook present (intercepts Ollama dlopen+dlsym GPU API calls)"
         else
             _fail "dlsym hook MISSING — Ollama NVML/CUDA discovery sees only physical VRAM"
             _info "Rebuild shim: cd $MODULE_DIR && make shim && sudo ./deploy_fix.sh"
-            _rec "Rebuild shim v2.4: cd $MODULE_DIR && make shim && sudo ./deploy_fix.sh"
+            _rec "Rebuild shim v2.5: cd $MODULE_DIR && make shim && sudo ./deploy_fix.sh"
         fi
     fi
 
@@ -2240,6 +2286,14 @@ except Exception as e:
 # ---- Entry point -------------------------------------------------------
 
 COMMAND="${1:-help}"
+
+# Check for a newer release before any install / diagnose operation.
+# Skipped for non-modifying commands (status, unload, help, build).
+case "$COMMAND" in
+    install|full-install|install-sys-configs|install-llama-configs|install-deps|diagnose)
+        check_update ; echo "" ;;
+esac
+
 case "$COMMAND" in
     install)            cmd_install            ;;
     uninstall)          cmd_uninstall          ;;
