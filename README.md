@@ -200,8 +200,8 @@ instructions see **[container_vm_mode.md](container_vm_mode.md)**.
 
 I started coding at 12, in JavaScript. A few years later I was into Cisco networking,
 capturing TCP/IP packets, playing with Linux back when Ubuntu was just starting to get
-traction. That combination — network protocols, low-level system behaviour, Linux
-internals — stuck with me.
+traction. That combination, network protocols, low-level system behaviour, Linux
+internals, stuck with me.
 
 More recently I had been modifying VMware kernel modules to get them running on newer
 Linux kernels. That gave me a working understanding of how kernel modules are structured,
@@ -210,9 +210,8 @@ piece of software behaves without the software itself knowing.
 
 On the ML side: I took neural network and machine learning courses, trained a couple of
 recognition models, and got far enough into the TensorFlow Developer certification path
-that I was essentially ready to sit the exam. Life got in the way — a relationship limited time — 
-and I ended up stopping just before the finish line.
-That one still stings a bit.
+that I was essentially ready to sit the exam. I got into a relationship, limited time, 
+and I ended up stopping missing the certification exam. That one still stings a bit.
 
 I use AI inference every day at work. Watching tokens burn through cloud APIs, knowing
 I had a GPU sitting at home doing nothing useful — it eventually clicked. The question I
@@ -222,38 +221,38 @@ machine, with the GPU tensor cores doing all the compute, without CPU spill?
 That was the spark for GreenBoost to materialize.
 
 The first thing I needed to understand was whether NVIDIA's tensor cores could handle
-the full model if I found a way to give the GPU access to more memory. That led me to
-NVIDIA's open-source kernel module source (`nvidia/open-gpu-kernel-modules`) — the
-actual driver code, published on GitHub. Where I should start if not official nvidia drivers?
-Nvidia kernel modules are the ones in charge of UVM  (Unified Virtual Memory) and
-on the other hand CUDA (runtime/API layer, sits on top of those modules) — exposes the GPU's capabilities to applications, 
-including access to tensor cores, everything was there in plain sight. 
-Many years reading hate comments against NVidia like the ones I cannot believe reading about DLSS5,
-ok... at the beginning NVidia was not opensourcing his code... but it is nowadays...
+the full model if I found a way to give the GPU access to more memory. 
+
+That led me to NVIDIA's open-source kernel modules source, the code published on GitHub. 
+
+The NVIDIA kernel modules handle the low-level hardware side memory management, 
+unified virtual memory, DMA. CUDA sits on top of that as the runtime and API layer:
+it's what applications actually talk to when they want to allocate memory, move data, or run compute on the GPU. Tensor cores, transfers, allocations, all of it flows through CUDA API layer. 
+
+And NVIDIA publishes all of that source code openly. Everything I needed was right there.
 
 That code was invaluable for getting the DMA-BUF import path right.
 
-Then on my first tries something was not working as expected, ollama was still doing whatever wanted,
-not taking kere of greenboost modules as if those where not working.
+Then on my first tries something was not working as expected, Ollama was still doing whatever it wanted, ignoring GreenBoost entirely, as if it wasn't there.
 
-Exploring I bit is when I found I should intercept Ollama call because that is what
+Exploring a bit further is when I found I should intercept Ollama call because that is what
 I'm using nowadays, though I am aware the AI inference landscape is much broader. 
 
-I explored documentation to get as much information on ollama project as I could reach, I was looking forn how `llama.cpp` handles CPU offload, how ExLlamaV2/V3 structures its KV cache, and how vLLM's paged attention allocates memory. 
+I explored documentation to get as much information on ollama project as I could reach, I was looking for how `llama.cpp` handles CPU offload, how ExLlamaV2/V3 structures its KV cache, and how vLLM's paged attention allocates memory. 
 
-Gathering this information was decisive to know how those allocation lifecycles work and where in greenboost stack should be the code to intercept the call, I gathered different opensourcelibraries to get a borad scenario so that any inference engine would work without modification — not just Ollama, that had been the goal.
+Gathering this information was decisive to know how those allocation lifecycles work and where in greenboost stack should be the code to intercept the call, I gathered different opensource libraries to get a broad scenario so that any inference tool would work without modification, not just Ollama, that had been the goal.
 
 and that's it
 
 Synapse Terminal (a non opensource local AI Inference terminal), started to answer my questions in a proper pace,
-I was stonished at the beggining, could not believe glm-4.7-flash:q8_0 was working that relatively well 
+I was stonished at the beggining, could not believe glm-4.7-flash:q8_0 was working that relatively well (later improved). 
 
 Another thing I had in mind is that OS should be optimized as much of possible, that's why I created the tune-all command,
-to optimize as much as possible the system for local AI Inference. This command run by default.
+to optimize as much as possible the system for local AI Inference. This command runs by default when choosing full-install command.
 
-I do have a modified (non official BIOS) that includes latest intel microcode, since the brans of my motherboard hadn't released it yet, to give you an idea on how much I like optimization.
+I do have a modified (non official BIOS) that includes latest intel microcode, since the brand of my motherboard hasn't released any newer version, for you to have an idea on how much I like optimization.
 
-There is still much more to do I guess... do not know when I will be surprised again seeing my hardware breaking lines again.
+There is still much more to do, I guess. I don't know when my hardware will surprise me again by pushing past what I thought were its limits.
 
 I personally have much to learn about AI Inference. That's why this project has a tools sections, to dive further into AI inference.
 
