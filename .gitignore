@@ -32,6 +32,9 @@ memory/
 *.claude.md
 .claude_*
 
+# Continue AI assistant (local config, never commit)
+.continue/
+
 # Python
 __pycache__/
 *.pyc
