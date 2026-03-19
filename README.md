@@ -315,19 +315,6 @@ COMMANDS:
 CUDA SHIM WRAPPER:
   greenboost run <app> [args...]   Run a CUDA app with GreenBoost overflow enabled
 ```
-
----
-
-## Known limitations
-
-- Tested on kernel 6.19 (Ubuntu 26.04). Earlier kernels may lack some exported symbols
-  the module relies on.
-- T3 NVMe tier is slow for random access. If a workload thrashes T3, performance degrades
-  significantly. This is a fundamental NVMe latency constraint, not a software issue.
-- Blackwell (compute capability 12.0) is the primary tested GPU. Ada Lovelace and Ampere
-  should work.
-
-
 ---
 
 ## Using GreenBoost inside containers, VMs, and WSL2
