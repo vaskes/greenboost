@@ -201,14 +201,13 @@ and that's it
 Synapse Terminal (a non opensource local AI Inference terminal), started to answer my questions in a proper pace,
 I was stonished at the beggining, could not believe glm-4.7-flash:q8_0 was working that relatively well (later improved). 
 
-Another thing I had in mind is that OS should be optimized as much of possible, that's why I created the tune-all command,
-to optimize as much as possible the system for local AI Inference. This command runs by default when choosing full-install command.
+Another thing I had in mind is that the OS should be optimized as much as possible. That's why I created the tune-all command to optimize the system as much as possible for local AI inference. This command runs by default when choosing the full-install command.
 
 I do have a modified (non official BIOS) that includes latest intel microcode, since the brand of my motherboard hasn't released any newer version, for you to have an idea on how much I like optimization.
 
 There is still much more to do, I guess. I don't know when my hardware will surprise me again by pushing past what I thought were its limits.
 
-I personally have much to learn about AI Inference. That's why this project has a tools sections, to dive further into AI inference.
+I personally have much to learn about AI Inference. That's why this project has a tools section, to dive further into AI inference.
 
 Hope you all enjoy greenboost kernel modules.
 
