@@ -43,7 +43,7 @@ DDR4-3600, Samsung 990 EVO Plus 4 TB NVMe, Ubuntu 26.04, kernel 6.19, NVIDIA dri
 
 ---
 
-## Why not ik_llama.cpp or CPU offload?
+## Why not ik_llama.cpp / CPU offload?
 
 I really like the concept of the CPU taking care of tensor compute. The idea is elegant.
 The problem is the compute power is not there, and the situation gets much worse the moment
@@ -59,14 +59,10 @@ using AVX vector instructions. The i9-14900KF is a powerful CPU, but it is not b
 With GreenBoost, the GPU handles the entire model during prefill, streaming the System DDR
 layers over PCIe while tensor cores do the work in parallel. Prefill is easily 5–10× faster.
 
-If you are running short prompts and only care about generation speed, ik_llama.cpp hybrid
-could be a reasonable solution. But with 198K context and real workloads, slow prefill
+If you are running short prompts, ik_llama.cpp could be a reasonable solution. But with 198K context and real workloads, slow prefill
 absolutely kills the experience. With an autonomous workflow where the LLM creates plans and
 implements them across long multi-turn sessions, how are you supposed to achieve that with
-ik_llama.cpp? It will collapse under the context length before it gets anywhere useful.
-
-And that is without even considering the compatibility issues you face with ik_llama.cpp on
-different setups.
+ik_llama.cpp? It will collapse under the context length before it gets anywhere useful, and that without even considering the compatibility issues you face with ik_llama.cpp on different setups.
 
 **The deeper difference: system-level vs application-level.**
 
@@ -84,9 +80,8 @@ anything, transparently gets access to that expanded pool. No per-application ch
 
 **GreenBoost is not a cache.** A common misconception: people hear "overflow to System DDR" and
 assume there is a hit/miss/eviction policy somewhere. There is not. A 31 GB model just
-*lives* in T1+T2 (VRAM + System DDR pool). The GPU addresses everything directly via PCIe DMA (Direct Memory Access).
-The model weights simply live in VRAM and System DDR at the same time, permanently. The GPU
-reads T1 weights at full VRAM speed and T2 weights over the PCIe link at ~32 GB/s PCIe 4 / ~64 GB/s PCIe 5. 
+*lives* in T1+T2 (VRAM + System DDR pool). The GPU addresses everything directly via PCIe DMA The GPU addresses everything directly via PCIe DMA (Direct Memory Access).
+The model weights simply live in VRAM and System DDR at the same time, permanently. The GPU reads T1 weights at full VRAM speed and T2 weights over the PCIe link at ~32 GB/s PCIe 4 / ~64 GB/s PCIe 5. 
 T2 is slower because of the hardware limitations itself between the GPU and the RAM, not because of any software
 caching mechanism.
 
