@@ -185,7 +185,7 @@ That led me to NVIDIA's open-source kernel modules source, the code published on
 
 The NVIDIA kernel modules handle the low-level hardware side memory management, 
 unified virtual memory, DMA. CUDA sits on top of that as the runtime and API layer:
-it's what applications actually talk to when they want to allocate memory, move data, or run compute on the GPU. Tensor cores, transfers, allocations, all of it flows through CUDA API layer. 
+it's what applications actually talk to when they want to allocate memory, move data, or run compute on the GPU. Tensor cores computations, transfers, allocations, all of it flows through CUDA API layer. 
 
 And NVIDIA publishes all of that source code openly. Everything I needed was right there.
 
@@ -250,7 +250,7 @@ The installer then runs the following steps automatically:
 | Restart | Restarts any services that were stopped during purge (Ollama, llama-server) |
 
 `greenboost_setup.sh` detects Red Hat-based systems at runtime and delegates to
-`greenboost_setup_rocky.sh` (contributed by Alan Sill — see Contributors below).
+`greenboost_setup_rocky.sh` (contributed by Alan Sill, see contributors below).
 
 ---
 
@@ -264,7 +264,7 @@ ollama run glm-4.7-flash:q8_0
 watch -n1 'cat /sys/class/greenboost/greenboost/pool_info'
 ```
 
-For tools that require manual model loading — llama.cpp, ik_llama.cpp, and others — see
+For tools that require manual model loading; llama.cpp, ik_llama.cpp, and others. See
 **[implementing_further_into_tools.md](implementing_further_into_tools.md)**.
 
 Ollama does not need this; GreenBoost integrates with it automatically via the CUDA shim.
@@ -343,10 +343,10 @@ Copyright (C) 2024-2026 Ferran Duarri
 
 ## Contributors
 
-- **Alan Sill** ([@alansill](https://gitlab.com/alansill)) — contributed `greenboost_setup_rocky.sh`,
+- **Alan Sill** ([@alansill](https://gitlab.com/alansill)) ; contributed `greenboost_setup_rocky.sh`,
   a setup script for Red Hat-based systems (Rocky Linux, AlmaLinux, RHEL).
 
-- **Jerry Nguyen** ([@phubao](https://gitlab.com/phubao)) — contributed the
+- **Jerry Nguyen** ([@phubao](https://gitlab.com/phubao)) ; contributed the
   kernel-module-free overflow path (MR !3): the `cuMemHostRegister(DEVICEMAP)` approach that
   enables GreenBoost VRAM extension inside containers, VMs, WSL2, and HPC clusters without
   requiring `greenboost.ko`. Integrated as Path B of the blended shim in v2.5.
