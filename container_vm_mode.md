@@ -1,8 +1,9 @@
-# GreenBoost v2.5 — Blended Shim: Three-Path Overflow Architecture
+# GreenBoost v2.5 ; Blended Shim: Three-Path Overflow Architecture
+---
 
 Author: Jerry Nguyen
 Contributor: Ferran Duarri
----
+
 
 ## Overview
 
