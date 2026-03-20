@@ -140,6 +140,7 @@ This is expected and correct. When you run a model with GreenBoost, the shim tel
 that the total GPU memory is 63 GB (T1 + T2 combined). Ollama then distributes the model
 layers across all 63 GB. The layers that happen to land in the first 12 GB end up in real
 VRAM; the rest land in the System DDR pool.
+** 63Gb is an example based on my workstation hardware.
 
 What `nvidia-smi` or any GPU monitor shows is only the physical VRAM, it has no visibility
 into the DDR pool. So if you are running a 32 GB model and the monitor shows 7–8 GB of VRAM
