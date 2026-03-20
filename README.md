@@ -214,7 +214,7 @@ There is still much more to do, I guess. I don't know when my hardware will surp
 
 I personally have much to learn about AI Inference. That's why this project has a tools sections, to dive further into AI inference.
 
-Hope you all enjoy greenboost kernel modules, if your workstation burns call Nguyen, he had been the culpit ;)
+Hope you all enjoy greenboost kernel modules.
 
 ---
 
@@ -346,7 +346,7 @@ Copyright (C) 2024-2026 Ferran Duarri
 - **Alan Sill** ([@alansill](https://gitlab.com/alansill)) — contributed `greenboost_setup_rocky.sh`,
   a setup script for Red Hat-based systems (Rocky Linux, AlmaLinux, RHEL).
 
-- **Jerry Nguyen** ([@jerry.nguyen](https://gitlab.com/jerry.nguyen)) — contributed the
+- **Jerry Nguyen** ([@phubao](https://gitlab.com/phubao)) — contributed the
   kernel-module-free overflow path (MR !3): the `cuMemHostRegister(DEVICEMAP)` approach that
   enables GreenBoost VRAM extension inside containers, VMs, WSL2, and HPC clusters without
   requiring `greenboost.ko`. Integrated as Path B of the blended shim in v2.5.
