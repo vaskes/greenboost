@@ -1,4 +1,4 @@
-# GreenBoost — 3-Tier GPU Memory Extension for Linux
+# GreenBoost : 3-Tier GPU Memory Extension for Linux
 
 **Author:** Ferran Duarri
 **License:** GPL v2 (open-source)
