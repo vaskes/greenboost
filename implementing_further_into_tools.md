@@ -1,27 +1,14 @@
 # GreenBoost — integration guide for inference tools
 
-## Static-CUDA vs lazy-CUDA apps
+## How GreenBoost hooks in
 
-GreenBoost needs to be active before CUDA symbols are resolved. How that happens depends
-on whether the app links libcuda at load time or resolves it later via `dlopen`:
+GreenBoost works by intercepting `cudaMalloc` and related CUDA symbols via `LD_PRELOAD`,
+plus intercepting `dlsym` so that virtual VRAM figures (63 GB) are returned to any app
+that queries VRAM size at runtime through `dlopen`+`dlsym`.
 
-| Category | Examples | How to activate |
-|----------|----------|-----------------|
-| **Static-CUDA** — links libcuda at startup | llama.cpp, llama-server, ik_llama.cpp, whisper.cpp | `LD_PRELOAD` alone is enough; shim activates at process start |
-| **Lazy-CUDA** — dlopen libcuda at first use | Ollama, vLLM, PyTorch, TGI, CTranslate2, ExLlamaV3 | Must also set `GREENBOOST_ACTIVE=1`; use `greenboost run` or a systemd `Environment=` line |
-
-For the dlsym hook (virtual VRAM reporting) to work, `GREENBOOST_ACTIVE=1` is also
-required even for static-CUDA apps — llama.cpp and ik_llama.cpp use `dlopen`+`dlsym`
-for their NVML backend, which bypasses LD_PRELOAD on those symbols.
-
-**Rule of thumb:** always set `GREENBOOST_ACTIVE=1`. Use `greenboost run` for CLI
-invocations, or add `Environment="GREENBOOST_ACTIVE=1"` to systemd service units.
-
----
-
-## Setup
-
-Ensure the shim is active for the process:
+For this to work the shim must be loaded before CUDA is touched. All tools below load
+CUDA lazily (via PyTorch, ctypes, or their own dlopen), so `GREENBOOST_ACTIVE=1` is
+required in addition to `LD_PRELOAD`:
 
 ```bash
 export LD_PRELOAD=/usr/local/lib/libgreenboost_cuda.so
@@ -31,56 +18,32 @@ export GREENBOOST_ACTIVE=1
 Or use the installed wrapper (sets both automatically):
 
 ```bash
-greenboost run llama-cli ...
-greenboost run llama-server ...
-greenboost run python your_script.py ...
+greenboost run python your_script.py
+greenboost run python -m vllm.entrypoints.openai.api_server ...
 ```
 
 ---
 
-## llama.cpp
+## Ollama
+
+Handled automatically by `install-sys-configs`, which injects the shim and
+`GREENBOOST_ACTIVE=1` into the systemd unit. No manual wrapper needed.
 
 ```bash
-greenboost run llama-cli \
-    --model /opt/models/glm-4.7-flash-q8_0.gguf \
-    --n-gpu-layers 999 \
-    --ctx-size 131072 \
-    --prompt "Hello"
+ollama run glm-4.7-flash:q8_0   # GreenBoost is transparent
 ```
 
-Server mode:
+If running Ollama outside systemd:
 
 ```bash
-greenboost run llama-server \
-    --model /opt/models/glm-4.7-flash-q8_0.gguf \
-    --n-gpu-layers 999 \
-    --ctx-size 131072 \
-    --port 8080
-```
-
-`--n-gpu-layers 999` is required — without it llama.cpp defaults to CPU-only.
-With GreenBoost reporting 63 GB virtual VRAM, 999 schedules all layers to T1+T2.
-
----
-
-## ik_llama.cpp
-
-Same flags — ik_llama.cpp is a fork of llama.cpp and uses the same interface:
-
-```bash
-greenboost run ik_llama \
-    --model /opt/models/glm-4.7-flash-q8_0.gguf \
-    --n-gpu-layers 999 \
-    --ctx-size 131072 \
-    --prompt "Hello"
+greenboost run ollama serve
 ```
 
 ---
 
 ## vLLM
 
-vLLM loads libcuda lazily through PyTorch (`torch.cuda` → `ctypes.CDLL`). Requires
-`GREENBOOST_ACTIVE=1`.
+vLLM loads libcuda lazily through PyTorch (`torch.cuda` → `ctypes.CDLL`).
 
 ```bash
 greenboost run python -m vllm.entrypoints.openai.api_server \
@@ -105,7 +68,6 @@ Environment="GREENBOOST_ACTIVE=1"
 Any `import torch; torch.cuda.*` call triggers lazy loading of libcuda via ctypes.
 
 ```bash
-greenboost run python your_training_script.py
 greenboost run python your_inference_script.py
 ```
 
@@ -144,25 +106,88 @@ Environment="GREENBOOST_ACTIVE=1"
 CTranslate2 loads libcudart via ctypes in its Python bindings:
 
 ```bash
-greenboost run python -c "
-import ctranslate2
-translator = ctranslate2.Translator('/opt/models/my-model', device='cuda')
-results = translator.translate_batch([['Hello']])
-print(results[0].hypotheses[0])
-"
+greenboost run python your_ctranslate2_script.py
 ```
 
-Or wrap the calling script:
+---
+
+## Hugging Face Transformers
+
+Transformers loads CUDA through PyTorch — same lazy-CUDA pattern as vLLM and TGI.
 
 ```bash
-greenboost run python your_ctranslate2_script.py
+greenboost run python your_transformers_script.py
+```
+
+With `device_map="auto"`, Transformers queries available VRAM before placing layers.
+GreenBoost reports 63 GB, so the full model is placed on the "GPU" (T1+T2) instead of
+being split to CPU:
+
+```python
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+
+model = AutoModelForCausalLM.from_pretrained(
+    "/opt/models/glm-4.7-flash-hf",
+    torch_dtype=torch.bfloat16,
+    device_map="auto",          # sees 63 GB — loads entire model onto T1+T2
+)
+tokenizer = AutoTokenizer.from_pretrained("/opt/models/glm-4.7-flash-hf")
+
+messages = [{"role": "user", "content": "Hello!"}]
+input_ids = tokenizer.apply_chat_template(
+    messages, tokenize=True, return_tensors="pt", add_generation_prompt=True
+).to(model.device)
+
+output = model.generate(input_ids, max_new_tokens=300)
+print(tokenizer.decode(output[0], skip_special_tokens=True))
+```
+
+Pipeline API works the same way:
+
+```python
+from transformers import pipeline
+
+pipe = pipeline(
+    "text-generation",
+    model="/opt/models/glm-4.7-flash-hf",
+    torch_dtype="bfloat16",
+    device_map="auto",
+)
+print(pipe("Hello!", max_new_tokens=200)[0]["generated_text"])
+```
+
+Downloading a model then running it in one shot:
+
+```bash
+greenboost run python - <<'EOF'
+from huggingface_hub import snapshot_download
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+
+snapshot_download("THUDM/glm-4.7-flash-hf", local_dir="/opt/models/glm-4.7-flash-hf")
+
+model = AutoModelForCausalLM.from_pretrained(
+    "/opt/models/glm-4.7-flash-hf", torch_dtype=torch.bfloat16, device_map="auto"
+)
+tokenizer = AutoTokenizer.from_pretrained("/opt/models/glm-4.7-flash-hf")
+ids = tokenizer("Hello!", return_tensors="pt").input_ids.to(model.device)
+print(tokenizer.decode(model.generate(ids, max_new_tokens=100)[0]))
+EOF
+```
+
+When using the GreenBoost venv:
+
+```bash
+GREENBOOST_ACTIVE=1 LD_PRELOAD=/usr/local/lib/libgreenboost_cuda.so \
+    /opt/greenboost/venv/bin/python your_transformers_script.py
 ```
 
 ---
 
 ## ExLlamaV3
 
-ExLlamaV3 is a Python framework — it loads CUDA through PyTorch:
+ExLlamaV3 loads CUDA through PyTorch:
 
 ```bash
 greenboost run python your_exllama_script.py
@@ -181,34 +206,20 @@ tensors — `GREENBOOST_ACTIVE=1` is still needed for virtual VRAM reporting.
 
 ---
 
-## Ollama
-
-Ollama is handled automatically by `install-sys-configs`, which injects the shim and
-`GREENBOOST_ACTIVE=1` into its systemd unit. No manual wrapper needed.
-
-```bash
-ollama run glm-4.7-flash:q8_0   # GreenBoost is transparent
-```
-
-If running Ollama outside systemd:
-
-```bash
-greenboost run ollama serve
-```
-
----
-
 ## Verify GreenBoost is active
 
 ```bash
-# Should show virtual VRAM (63 GB), not physical (12 GB):
-GREENBOOST_DEBUG=1 greenboost run llama-cli \
-    --model /opt/models/glm-4.7-flash-q8_0.gguf \
-    --n-gpu-layers 999 -p "hi" 2>&1 \
-    | grep -i "greenboost\|vram\|gpu layers"
-
-# Check kernel module pool after inference:
+# Should show T2 pool in use (non-zero) after loading a model larger than 12 GB:
 cat /sys/class/greenboost/greenboost/pool_info
+
+# Confirm virtual VRAM is visible (should report ~63 GB, not 12 GB):
+greenboost run python -c "
+import torch
+print('VRAM reported:', round(torch.cuda.get_device_properties(0).total_memory / 1e9, 1), 'GB')
+"
+
+# Check shim is loaded into a running process (e.g. Ollama):
+grep greenboost /proc/$(pgrep ollama)/maps | head -3
 ```
 
 ---

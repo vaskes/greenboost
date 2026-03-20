@@ -64,6 +64,8 @@ absolutely kills the experience. With an autonomous workflow where the LLM creat
 implements them across long multi-turn sessions, how are you supposed to achieve that with
 ik_llama.cpp? It will collapse under the context length before it gets anywhere useful, and that without even considering the compatibility issues you face with ik_llama.cpp on different setups.
 
+There is no reason to use llama.cpp and/or ik_llama.cpp with greenboost; the only useful scenario would be if you have an AMD GPU that cannot benefit from greenboost.
+
 **The deeper difference: system-level vs application-level.**
 
 ik_llama.cpp is an application-level solution. It teaches itself to spill weights into system
@@ -82,8 +84,7 @@ anything, transparently gets access to that expanded pool. No per-application ch
 assume there is a hit/miss/eviction policy somewhere. There is not. A 31 GB model just
 *lives* in T1+T2 (VRAM + System DDR pool). The GPU addresses everything directly via PCIe DMA The GPU addresses everything directly via PCIe DMA (Direct Memory Access).
 The model weights simply live in VRAM and System DDR at the same time, permanently. The GPU reads T1 weights at full VRAM speed and T2 weights over the PCIe link at ~32 GB/s PCIe 4 / ~64 GB/s PCIe 5. 
-T2 is slower because of the hardware limitations itself between the GPU and the RAM, not because of any software
-caching mechanism.
+T2 is slower because of the hardware limitations itself between the GPU and the RAM, not because of any software caching mechanism.
 
 ---
 
@@ -259,7 +260,7 @@ ollama run glm-4.7-flash:q8_0
 watch -n1 'cat /sys/class/greenboost/greenboost/pool_info'
 ```
 
-For tools that require manual model loading; llama.cpp, ik_llama.cpp, and others. See
+For tools that require manual model loading, see
 **[implementing_further_into_tools.md](implementing_further_into_tools.md)**.
 
 Ollama does not need this; GreenBoost integrates with it automatically via the CUDA shim.
