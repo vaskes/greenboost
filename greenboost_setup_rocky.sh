@@ -1387,7 +1387,7 @@ cmd_optimize_model() {
 
     info "╔══════════════════════════════════════════════════════════════╗"
     info "║  GreenBoost — Model Optimization                            ║"
-    info "║  Copyright (C) 2024-2026 Ferran Duarri                     ║"
+    info "║  Copyright (C) 2026 Ferran Duarri                     ║"
     info "╚══════════════════════════════════════════════════════════════╝"
     info "Model    : $model"
     info "GPU      : ${GPU_NAME}  (${GB_PHYS} GB VRAM)"

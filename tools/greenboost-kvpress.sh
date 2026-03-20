@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # GreenBoost — KV cache compression launcher (kvpress)
-# Copyright (C) 2024-2026 Ferran Duarri. GPL v2 / Commercial — see LICENSE.
+# Copyright (C) 2026 Ferran Duarri. GPL v2 / Commercial — see LICENSE.
 #
 # Runs HuggingFace inference with runtime KV cache compression via kvpress.
 # No model retraining required — compression applied at inference time.

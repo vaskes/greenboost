@@ -394,6 +394,6 @@ official NVIDIA CUDA runtime unchanged.
 **Commercial license** available for proprietary products. Contact: see repository.
 
 ```
-Copyright (C) 2024-2026 Ferran Duarri
+Copyright (C) 2026 Ferran Duarri
 SPDX-License-Identifier: GPL-2.0-only
 ```

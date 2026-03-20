@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # GreenBoost — ExLlamaV3 launcher
-# Copyright (C) 2024-2026 Ferran Duarri. GPL v2 / Commercial — see LICENSE.
+# Copyright (C) 2026 Ferran Duarri. GPL v2 / Commercial — see LICENSE.
 #
 # Runs ExLlamaV3 chat or server with GreenBoost System DDR KV cache offload enabled.
 # Automatically injects LD_PRELOAD shim and sets GreenBoost cache environment.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 GreenBoost — LoRA fine-tuning using Unsloth (fastest LoRA trainer on NVIDIA GPUs).
-Copyright (C) 2024-2026 Ferran Duarri. GPL v2 / Commercial — see LICENSE.
+Copyright (C) 2026 Ferran Duarri. GPL v2 / Commercial — see LICENSE.
 
 Fine-tunes a model on custom data using LoRA (r=16). Fits in 12 GB VRAM via
 4-bit base model. Exports merged GGUF for Ollama or standalone HF checkpoint.

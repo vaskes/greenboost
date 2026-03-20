@@ -332,7 +332,7 @@ GPL v2 — open-source. Attribution to Ferran Duarri is required in all forks, d
 and any documentation that references this work.
 
 ```
-Copyright (C) 2024-2026 Ferran Duarri
+Copyright (C) 2026 Ferran Duarri
 ```
 
 ---

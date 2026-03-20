@@ -1,6 +1,6 @@
 """
 GreenBoost KV cache layer for ExLlamaV3.
-Copyright (C) 2024-2026 Ferran Duarri. GPL v2 / Commercial — see LICENSE.
+Copyright (C) 2026 Ferran Duarri. GPL v2 / Commercial — see LICENSE.
 
 Routes KV cache allocations through GreenBoost Tier 2 (System DDR DMA-BUF pinned pages)
 instead of GPU VRAM. Enables inference with contexts that exceed VRAM capacity.

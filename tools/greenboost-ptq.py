@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 GreenBoost — Model Post-Training Quantization (PTQ) via NVIDIA ModelOpt.
-Copyright (C) 2024-2026 Ferran Duarri. GPL v2 / Commercial — see LICENSE.
+Copyright (C) 2026 Ferran Duarri. GPL v2 / Commercial — see LICENSE.
 
 Quantizes a HuggingFace model to FP8 (default), INT4-AWQ, or NVFP4 without
 retraining. Reduces model size 2-4x, lowering GreenBoost Tier 2 System DDR pressure.

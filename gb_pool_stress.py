@@ -45,7 +45,7 @@ def print_header():
     print(f"║                                                                ║")
     print(f"║     GreenBoost — 3-Tier Pool Spillover Stress Test            ║")
     print(f"║     T1 VRAM (12 GB) → T2 System DDR (51 GB) → T3 NVMe (576 GB)   ║")
-    print(f"║     Copyright (C) 2024-2026 Ferran Duarri                    ║")
+    print(f"║     Copyright (C) 2026 Ferran Duarri                    ║")
     print(f"║                                                                ║")
     print(f"╚════════════════════════════════════════════════════════════════╝{Colors.RESET}\n")
 
@@ -200,7 +200,7 @@ def main():
         print(f"║         GreenBoost 3-Tier Spillover Test PASSED               ║")
         print(f"║                                                                ║")
         print(f"║  T1 VRAM filled → T2 System DDR spillover via GreenBoost shim      ║")
-        print(f"║  Copyright (C) 2024-2026 Ferran Duarri                       ║")
+        print(f"║  Copyright (C) 2026 Ferran Duarri                       ║")
         print(f"║                                                                ║")
         print(f"╚════════════════════════════════════════════════════════════════╝{Colors.RESET}\n")
         return 0

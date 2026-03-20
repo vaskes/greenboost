@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # GreenBoost — Convert HuggingFace model to EXL3 format for ExLlamaV3
-# Copyright (C) 2024-2026 Ferran Duarri. GPL v2 / Commercial — see LICENSE.
+# Copyright (C) 2026 Ferran Duarri. GPL v2 / Commercial — see LICENSE.
 #
 # EXL3 quantization achieves 2–8 bpw (bits per weight). For glm-4.7-flash:
 #   8 bpw → ~32 GB (same as q8_0; not useful)
@@ -65,7 +65,7 @@ WORK_DIR="${WORK_DIR:-/tmp/greenboost-exl3-work-$$}"
 
 info "═══════════════════════════════════════════════════════════════"
 info "  GreenBoost — EXL3 Conversion"
-info "  Copyright (C) 2024-2026 Ferran Duarri"
+info "  Copyright (C) 2026 Ferran Duarri"
 info "═══════════════════════════════════════════════════════════════"
 info "  Model  : $MODEL"
 info "  BPW    : $BPW bits/weight"
