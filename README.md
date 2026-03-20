@@ -347,6 +347,6 @@ Copyright (C) 2024-2026 Ferran Duarri
   a setup script for Red Hat-based systems (Rocky Linux, AlmaLinux, RHEL).
 
 - **Jerry Nguyen** ([@phubao](https://gitlab.com/phubao)) ; contributed the
-  kernel-module-free overflow path (MR !3): the `cuMemHostRegister(DEVICEMAP)` approach that
+  kernel-module-free overflow path, the `cuMemHostRegister(DEVICEMAP)` approach that
   enables GreenBoost VRAM extension inside containers, VMs, WSL2, and HPC clusters without
   requiring `greenboost.ko`. Integrated as Path B of the blended shim in v2.5.
