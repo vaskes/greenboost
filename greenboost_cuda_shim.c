@@ -56,12 +56,14 @@ typedef int                CUresult;
 typedef int                cudaError_t;
 typedef unsigned int       CUmemAttach_flags;
 typedef int                CUdevice;
+typedef void *              CUcontext;
 typedef struct CUstream_st *CUstream;
 typedef CUstream            cudaStream_t;
 
 #define CUDA_SUCCESS                0
 #define CUDA_ERROR_NOT_SUPPORTED    801
 #define CUDA_ERROR_OUT_OF_MEMORY    2
+#define CUDA_ERROR_INVALID_CONTEXT  201
 #define CU_MEM_ATTACH_GLOBAL        0x1u
 #define CU_MEM_ATTACH_HOST          0x2u
 
@@ -305,6 +307,10 @@ typedef CUresult    (*pfn_cuMemAlloc_v2)(CUdeviceptr *, size_t);
 typedef CUresult    (*pfn_cuMemFree_v2)(CUdeviceptr);
 typedef CUresult    (*pfn_cuMemAllocManaged)(CUdeviceptr *, size_t, CUmemAttach_flags);
 typedef CUresult    (*pfn_cuMemGetInfo)(size_t *, size_t *);
+typedef CUresult    (*pfn_cuCtxGetCurrent)(CUcontext *);
+typedef CUresult    (*pfn_cuCtxSetCurrent)(CUcontext);
+typedef CUresult    (*pfn_cuDevicePrimaryCtxRetain)(CUcontext *, CUdevice);
+typedef CUresult    (*pfn_cuDeviceGet)(CUdevice *, int);
 typedef CUresult    (*pfn_cuMemAllocAsync)(CUdeviceptr *, size_t, CUstream);
 typedef cudaError_t (*pfn_cudaMalloc)(void **, size_t);
 typedef cudaError_t (*pfn_cudaFree)(void *);
@@ -349,6 +355,10 @@ static pfn_cuMemAlloc_v2                   real_cuMemAlloc_v2;
 static pfn_cuMemFree_v2                    real_cuMemFree_v2;
 static pfn_cuMemAllocManaged               real_cuMemAllocManaged;
 static pfn_cuMemGetInfo                    real_cuMemGetInfo;
+static pfn_cuCtxGetCurrent          real_cuCtxGetCurrent;
+static pfn_cuCtxSetCurrent          real_cuCtxSetCurrent;
+static pfn_cuDevicePrimaryCtxRetain real_cuDevicePrimaryCtxRetain;
+static pfn_cuDeviceGet              real_cuDeviceGet;
 static pfn_cuMemAllocAsync                 real_cuMemAllocAsync;
 static pfn_cudaMalloc                      real_cudaMalloc;
 static pfn_cudaFree                        real_cudaFree;
@@ -581,6 +591,10 @@ static void gb_shim_init(void)
     real_cuMemFree_v2      = (pfn_cuMemFree_v2)      dlsym(libcuda, "cuMemFree_v2");
     real_cuMemAllocManaged = (pfn_cuMemAllocManaged)  dlsym(libcuda, "cuMemAllocManaged");
     real_cuMemAllocAsync   = (pfn_cuMemAllocAsync)    dlsym(libcuda, "cuMemAllocAsync");
+    real_cuCtxGetCurrent          = (pfn_cuCtxGetCurrent)          dlsym(libcuda, "cuCtxGetCurrent");
+    real_cuCtxSetCurrent          = (pfn_cuCtxSetCurrent)          dlsym(libcuda, "cuCtxSetCurrent");
+    real_cuDevicePrimaryCtxRetain = (pfn_cuDevicePrimaryCtxRetain) dlsym(libcuda, "cuDevicePrimaryCtxRetain");
+    real_cuDeviceGet              = (pfn_cuDeviceGet)              dlsym(libcuda, "cuDeviceGet");
     real_cuMemGetInfo      = (pfn_cuMemGetInfo)       dlsym(libcuda, "cuMemGetInfo_v2");
     if (!real_cuMemGetInfo)
         real_cuMemGetInfo  = (pfn_cuMemGetInfo)       dlsym(libcuda, "cuMemGetInfo");
@@ -787,8 +801,22 @@ static CUresult gb_overflow_alloc(CUdeviceptr *dptr, size_t bytesize)
                     return CUDA_ERROR_OUT_OF_MEMORY;
                 }
 
-                /* Get the device pointer for the registered memory */
+                /* Get the device pointer for the registered memory.
+                 *
+                 * On UVA systems (verified on driver 615.71.09) this call is
+                 * redundant: a DEVICEMAP-registered region is mapped at the
+                 * same virtual address on the device. It also returns
+                 * CUDA_ERROR_INVALID_CONTEXT on some drivers, which used to
+                 * discard a perfectly good buffer and drop the whole
+                 * allocation to UVM. Fall back to the host pointer instead. */
                 ret = real_cuMemHostGetDevicePointer(dptr, mapped_ptr, 0);
+                if (ret != CUDA_SUCCESS) {
+                    *dptr = (CUdeviceptr)(uintptr_t)mapped_ptr;
+                    fprintf(stderr,
+                        "[GreenBoost] cuMemHostGetDevicePointer rc=%d, using UVA host pointer 0x%llx\n",
+                        ret, (unsigned long long)*dptr);
+                    ret = CUDA_SUCCESS;
+                }
                 if (ret != CUDA_SUCCESS) {
                     fprintf(stderr, "[GreenBoost] cuMemHostGetDevicePointer FAILED ret=%d\n", ret);
                     if (real_cuMemHostUnregister) real_cuMemHostUnregister(mapped_ptr);
@@ -1133,6 +1161,23 @@ CUresult cuMemGetInfo_v2(size_t *free_out, size_t *total_out)
         return CUDA_ERROR_NOT_SUPPORTED;
 
     ret = real_cuMemGetInfo(&real_free, &real_total);
+    if (ret == CUDA_ERROR_INVALID_CONTEXT && real_cuDevicePrimaryCtxRetain) {
+        /* No context on this thread yet. libcudart normally creates one before
+         * asking; our interposition skipped it. Retain the primary context and
+         * retry, then restore whatever was current. */
+        CUcontext saved = NULL, primary = NULL;
+        CUdevice dev = 0;
+
+        if (real_cuCtxGetCurrent && real_cuCtxSetCurrent)
+            real_cuCtxGetCurrent(&saved);
+        if (!real_cuDeviceGet || real_cuDeviceGet(&dev, 0) != CUDA_SUCCESS)
+            dev = 0;
+        if (real_cuDevicePrimaryCtxRetain(&primary, dev) == CUDA_SUCCESS) {
+            real_cuCtxSetCurrent(primary);
+            ret = real_cuMemGetInfo(&real_free, &real_total);
+            real_cuCtxSetCurrent(saved);
+        }
+    }
     if (ret != CUDA_SUCCESS)
         return ret;
 
@@ -1160,6 +1205,19 @@ cudaError_t cudaMemGetInfo(size_t *free_out, size_t *total_out)
     /* Call real driver function directly — avoids double-inflation if libcudart
      * internally calls cuMemGetInfo_v2 (which we also override). */
     ret = real_cuMemGetInfo(&real_free, &real_total);
+    if (ret == CUDA_ERROR_INVALID_CONTEXT && real_cuDevicePrimaryCtxRetain) {
+        CUcontext saved = NULL, primary = NULL;
+        CUdevice dev = 0;
+        if (real_cuCtxGetCurrent && real_cuCtxSetCurrent)
+            real_cuCtxGetCurrent(&saved);
+        if (!real_cuDeviceGet || real_cuDeviceGet(&dev, 0) != CUDA_SUCCESS)
+            dev = 0;
+        if (real_cuDevicePrimaryCtxRetain(&primary, dev) == CUDA_SUCCESS) {
+            real_cuCtxSetCurrent(primary);
+            ret = real_cuMemGetInfo(&real_free, &real_total);
+            real_cuCtxSetCurrent(saved);
+        }
+    }
     if (ret != CUDA_SUCCESS)
         return (cudaError_t)ret;
 
